@@ -265,23 +265,6 @@ function estimateValues(data, condition) {
   return suggestListingPrices(data, condition);
 }
 
-function ratingFromData(data) {
-  const rrp = data.uk_rrp;
-  const sealed = data.bl_sealed_avg;
-  const used = data.bl_used_avg;
-  if (!rrp || rrp <= 0) {
-    if (sealed && sealed > 50) return "Excellent";
-    return "Good";
-  }
-  const sealedGrowth = sealed ? (sealed - rrp) / rrp : 0;
-  const usedGrowth = used ? (used - rrp) / rrp : 0;
-  const growth = Math.max(sealedGrowth, usedGrowth);
-  if (growth >= 0.5) return "Excellent";
-  if (growth >= 0.15) return "Good";
-  if (growth >= -0.1) return "Average";
-  return "Poor";
-}
-
 async function fetchPricing(setNumber, condition, slugHint, existingHistory = [], existingSet = {}) {
   const num = normalizeSetNumber(setNumber);
   const [meta, be, bl, ebay, ebayAsks] = await Promise.allSettled([
@@ -349,7 +332,6 @@ async function fetchPricing(setNumber, condition, slugHint, existingHistory = []
   preserveRetailFields(merged, existingSet);
 
   const estimates = suggestListingPrices(merged, condition);
-  merged.investment_rating = ratingFromData(merged);
   const snapshot = buildPriceSnapshot({ ...merged, ...estimates });
   merged.price_history = appendPriceHistory(existingHistory, snapshot);
   const withEstimates = { ...merged, ...estimates };

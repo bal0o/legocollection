@@ -5,7 +5,6 @@ const path = require("path");
 const store = require("./db/database");
 const { searchSets, fetchPricing, lookupSetMetadata, normalizeSetNumber } = require("./services/pricing");
 const { generateListingText } = require("./services/listing");
-const { createStoreInventory, getCredentials } = require("./services/bricklink");
 const { lookupPart, enrichMissingPieces } = require("./services/parts");
 const { refreshAllSets, isRefreshInProgress, getRefreshStatus } = require("./services/refresh-all");
 const { startDailyRefreshScheduler } = require("./services/scheduler");
@@ -190,54 +189,6 @@ app.post("/api/sets/refresh-all", async (req, res) => {
   }
 
   res.end();
-});
-
-app.post("/api/sets/:id/list-bricklink", async (req, res) => {
-  try {
-    if (!getCredentials()) {
-      return res.status(503).json({ error: "BrickLink API credentials not configured in .env" });
-    }
-
-    const set = store.getSet(Number(req.params.id));
-    if (!set) return res.status(404).json({ error: "Set not found" });
-
-    const { price, quantity, condition } = req.body || {};
-    const listing_text = generateListingText({
-      ...set,
-      condition: condition || set.condition,
-    });
-
-    const result = await createStoreInventory(set, {
-      price,
-      quantity,
-      condition,
-      description: listing_text,
-    });
-
-    const updates = {
-      bricklink_inventory_id: result.inventory_id,
-      bricklink_listed_at: new Date().toISOString(),
-    };
-    if (price != null) updates.listed_price = Number(price);
-    else if (set.listed_price == null && result.payload?.unit_price) {
-      updates.listed_price = Number(result.payload.unit_price);
-    }
-    if (quantity != null) updates.quantity_listed = Math.max(1, parseInt(quantity, 10) || 1);
-    else if ((set.quantity_listed ?? 0) < 1) updates.quantity_listed = result.payload.quantity;
-    if (set.listing_status === "collection") {
-      updates.listing_status = "for_sale";
-      updates.listed_date = set.listed_date || new Date().toISOString().slice(0, 10);
-    }
-
-    const updated = store.updateSet(set.id, updates);
-    res.json({
-      inventory_id: result.inventory_id,
-      url: result.url,
-      set: updated,
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
 });
 
 app.patch("/api/sets/:id", (req, res) => {

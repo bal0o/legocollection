@@ -83,7 +83,6 @@
           <th class="num col-price"><button type="button" class="sort-btn" data-sort="recommended_price">List at</button></th>
           <th class="num listed-col hide-mobile"><button type="button" class="sort-btn" data-sort="listed_price">Listed £</button></th>
           <th class="num sold-col hidden"><button type="button" class="sort-btn" data-sort="sold_price">Sold £</button></th>
-          <th class="hide-mobile"><button type="button" class="sort-btn" data-sort="investment_rating">Rating</button></th>
           <th class="col-actions"><span class="col-actions-label">Actions</span></th>
         </tr>
       </thead>
@@ -284,12 +283,8 @@
     <div class="detail-listing">
       <div class="detail-listing-header">
         <h3>Listing description</h3>
-        <div class="detail-listing-actions">
-          <button type="button" id="detail-btn-list-bl" class="btn btn-primary btn-sm">List on BrickLink</button>
-          <button type="button" id="btn-copy-listing" class="btn btn-secondary btn-sm">Copy to clipboard</button>
-        </div>
+        <button type="button" id="btn-copy-listing" class="btn btn-secondary btn-sm">Copy to clipboard</button>
       </div>
-      <p id="detail-bl-status" class="detail-bl-status hidden"></p>
       <textarea id="detail-listing-text" class="listing-text" readonly rows="12"></textarea>
     </div>
     <div class="modal-actions">

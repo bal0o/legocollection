@@ -60,34 +60,26 @@ function buildAuthHeader(method, url, creds) {
   return header;
 }
 
-async function brickLinkRequest(method, path, { query = {}, body = null } = {}) {
+async function brickLinkRequest(path, query = {}) {
   const creds = getCredentials();
   if (!creds) throw new Error("BrickLink API credentials not configured");
 
-  const httpMethod = method.toUpperCase();
   const qs = new URLSearchParams(query).toString();
   const url = `${BASE_URL}${path}${qs ? `?${qs}` : ""}`;
-  const auth = buildAuthHeader(httpMethod, url, creds);
+  const auth = buildAuthHeader("GET", url, creds);
 
-  const fetchOpts = {
-    method: httpMethod,
+  const res = await fetch(url, {
     headers: { Authorization: auth, Accept: "application/json" },
     signal: AbortSignal.timeout(20000),
-  };
-  if (body != null) {
-    fetchOpts.headers["Content-Type"] = "application/json";
-    fetchOpts.body = JSON.stringify(body);
-  }
+  });
 
-  const res = await fetch(url, fetchOpts);
-
-  const responseBody = await res.json();
-  if (!res.ok || responseBody.meta?.code >= 400) {
-    const msg = responseBody.meta?.message || `BrickLink API error ${res.status}`;
-    const detail = responseBody.meta?.description ? `: ${responseBody.meta.description}` : "";
+  const body = await res.json();
+  if (!res.ok || body.meta?.code >= 400) {
+    const msg = body.meta?.message || `BrickLink API error ${res.status}`;
+    const detail = body.meta?.description ? `: ${body.meta.description}` : "";
     throw new Error(`${msg}${detail}`);
   }
-  return responseBody.data;
+  return body.data;
 }
 
 function normalizeSetNo(setNumber) {
@@ -105,7 +97,7 @@ async function getPriceGuide(setNumber, { newOrUsed = "U", guideType = "sold", c
   if (countryCode) query.country_code = countryCode;
   if (region) query.region = region;
 
-  const data = await brickLinkRequest("GET", `/items/SET/${itemNo}/price`, { query });
+  const data = await brickLinkRequest(`/items/SET/${itemNo}/price`, query);
 
   const avg = parseFloat(data.avg_price);
   const qtyAvg = parseFloat(data.qty_avg_price);
@@ -194,67 +186,8 @@ async function getSetPrices(setNumber) {
   };
 }
 
-function mapConditionToBrickLink(condition, missingPieces = []) {
-  const c = (condition || "").toLowerCase();
-  const hasMissing = Array.isArray(missingPieces) && missingPieces.length > 0;
-
-  if (c.includes("bnib")) {
-    return { new_or_used: "N", completeness: "S" };
-  }
-  if (c.includes("missing") || hasMissing) {
-    return { new_or_used: "U", completeness: "B" };
-  }
-  return { new_or_used: "U", completeness: "C" };
-}
-
-function formatUnitPrice(price) {
-  const n = Number(price);
-  if (!Number.isFinite(n) || n <= 0) {
-    throw new Error("A valid listing price greater than zero is required");
-  }
-  return n.toFixed(2);
-}
-
-function buildInventoryPayload(set, { price, quantity, condition, description } = {}) {
-  const itemNo = normalizeSetNo(set.set_number);
-  const qty = Math.max(1, parseInt(quantity ?? set.quantity_listed ?? 1, 10) || 1);
-  const cond = condition || set.condition;
-  const { new_or_used, completeness } = mapConditionToBrickLink(cond, set.missing_pieces);
-  const unitPrice = formatUnitPrice(
-    price ?? set.listed_price ?? set.recommended_price ?? set.private_sale_value
-  );
-
-  const desc = (description || "").trim();
-  const payload = {
-    item: { no: itemNo, type: "SET" },
-    color_id: 0,
-    quantity: qty,
-    unit_price: unitPrice,
-    new_or_used,
-    completeness,
-  };
-  if (desc) payload.description = desc.slice(0, 4000);
-  return payload;
-}
-
-async function createStoreInventory(set, options = {}) {
-  const payload = buildInventoryPayload(set, options);
-  const data = await brickLinkRequest("POST", "/inventories", { body: payload });
-  return {
-    inventory_id: data.inventory_id,
-    url: data.inventory_id
-      ? `https://www.bricklink.com/v2/inventory_detail.page?invID=${data.inventory_id}`
-      : null,
-    payload,
-    data,
-  };
-}
-
 module.exports = {
   getCredentials,
   getSetPrices,
   getPriceGuide,
-  mapConditionToBrickLink,
-  buildInventoryPayload,
-  createStoreInventory,
 };

@@ -44,7 +44,6 @@ let cachedSets = [];
 let sortColumn = "set_number";
 let sortDir = "asc";
 
-const RATING_ORDER = { Poor: 0, Average: 1, Good: 2, Excellent: 3 };
 const STATUS_ORDER = { collection: 0, for_sale: 1, sold: 2 };
 
 async function api(path, opts = {}) {
@@ -101,11 +100,6 @@ function sortSets(sets) {
     if (sortColumn === "listing_status") {
       av = STATUS_ORDER[av] ?? 0;
       bv = STATUS_ORDER[bv] ?? 0;
-      return (av - bv) * dir;
-    }
-    if (sortColumn === "investment_rating") {
-      av = RATING_ORDER[av] ?? -1;
-      bv = RATING_ORDER[bv] ?? -1;
       return (av - bv) * dir;
     }
     if (sortColumn === "sold_price") {
@@ -227,7 +221,6 @@ function renderSetCards(sets, { showSoldCol, showListedCol }) {
           <span class="name">${esc(s.description)}</span>
           ${(s.missing_pieces?.length ?? 0) > 0 ? `<span class="missing-badge">${s.missing_pieces.length} missing</span>` : ""}
         </div>
-        <span class="set-card-rating rating-${s.investment_rating || "Average"}">${s.investment_rating || "—"}</span>
       </div>
       <p class="set-card-condition">${esc(s.condition)} · ${qty}</p>
       <div class="set-card-status">${statusSelect(s.id, s.listing_status)}</div>
@@ -283,7 +276,6 @@ function renderSets(sets) {
       <td class="num col-price">${fmtWhole(recommendedPrice(s))}</td>
       <td class="num listed-col hide-mobile${s.listing_status === "for_sale" ? " listed-price-edit" : ""}${showListedCol ? "" : " hidden"}" data-edit-listed="${s.listing_status === "for_sale" ? s.id : ""}" title="${s.listing_status === "for_sale" ? "Click to edit listed price" : ""}">${s.listing_status === "for_sale" ? fmtWhole(s.listed_price) : "—"}</td>
       <td class="num sold-col${showSoldCol ? " sold-price-edit" : " hidden"}" data-edit-sold="${s.id}" title="Click to edit sold price">${fmt(s.sold_price)}</td>
-      <td class="hide-mobile rating-${s.investment_rating || "Average"}">${s.investment_rating || "—"}</td>
       <td class="col-actions"><div class="actions">${actionButtons(s.id)}</div></td>
     </tr>`
     )
@@ -716,13 +708,11 @@ async function openSetDetailAsync(id) {
     ["eBay sold avg", fmt(set.ebay_sold_avg)],
     ["eBay asks from", fmt(set.ebay_ask_min)],
     ["UK RRP", fmt(set.uk_rrp)],
-    ["Rating", set.investment_rating || "—"],
   ]
     .map(([k, v]) => `<div class="detail-stat"><span>${k}</span><strong>${v}</strong></div>`)
     .join("");
 
   $("#detail-listing-text").value = set.listing_text || "";
-  updateBrickLinkStatus(set);
   populateDetailManageForm(set);
 
   $("#modal-detail").showModal();
@@ -873,85 +863,6 @@ $("#detail-btn-save-status").addEventListener("click", async () => {
   } finally {
     btn.disabled = false;
     btn.textContent = "Save status & pricing";
-  }
-});
-
-function detailListingPrice() {
-  const listed = parseFloat($("#detail-listed-price-input").value);
-  if (Number.isFinite(listed) && listed > 0) return listed;
-  return recommendedPrice(detailCurrentSet);
-}
-
-function detailListingQuantity() {
-  const listed = parseInt($("#detail-quantity-listed").value, 10);
-  if (Number.isFinite(listed) && listed > 0) return listed;
-  const held = parseInt($("#detail-quantity-held").value, 10);
-  if (Number.isFinite(held) && held > 0) return held;
-  return detailCurrentSet?.quantity_listed || detailCurrentSet?.quantity_held || 1;
-}
-
-function updateBrickLinkStatus(set) {
-  const el = $("#detail-bl-status");
-  if (!set?.bricklink_inventory_id) {
-    el.classList.add("hidden");
-    el.innerHTML = "";
-    return;
-  }
-  const url = `https://www.bricklink.com/v2/inventory_detail.page?invID=${set.bricklink_inventory_id}`;
-  const when = set.bricklink_listed_at
-    ? new Date(set.bricklink_listed_at).toLocaleString("en-GB")
-    : null;
-  el.innerHTML = `Listed on BrickLink: <a href="${url}" target="_blank" rel="noopener">#${set.bricklink_inventory_id}</a>${when ? ` · ${when}` : ""}`;
-  el.classList.remove("hidden");
-}
-
-$("#detail-btn-list-bl").addEventListener("click", async () => {
-  if (!detailTargetId || !detailCurrentSet) return;
-
-  const price = detailListingPrice();
-  const quantity = detailListingQuantity();
-  const condition = $("#detail-condition").value;
-
-  if (price == null || price <= 0) {
-    toast("Enter a listed price or refresh prices first", "error");
-    return;
-  }
-
-  const condLabel = condition || detailCurrentSet.condition;
-  const ok = window.confirm(
-    `List on BrickLink?\n\n` +
-      `${detailCurrentSet.set_number} — ${detailCurrentSet.description}\n` +
-      `Price: £${Number(price).toFixed(2)}\n` +
-      `Quantity: ${quantity}\n` +
-      `Condition: ${condLabel}\n\n` +
-      `This creates a live listing in your BrickLink store.`
-  );
-  if (!ok) return;
-
-  const btn = $("#detail-btn-list-bl");
-  btn.disabled = true;
-  btn.textContent = "Listing…";
-
-  try {
-    const result = await api(`/api/sets/${detailTargetId}/list-bricklink`, {
-      method: "POST",
-      body: JSON.stringify({ price, quantity, condition }),
-    });
-    if (result.set) {
-      const idx = cachedSets.findIndex((s) => String(s.id) === String(detailTargetId));
-      if (idx >= 0) cachedSets[idx] = result.set;
-      detailCurrentSet = result.set;
-      populateDetailManageForm(result.set);
-      updateBrickLinkStatus(result.set);
-    }
-    toast(`Listed on BrickLink (#${result.inventory_id})`);
-    await refresh();
-    if (result.url) window.open(result.url, "_blank", "noopener");
-  } catch (err) {
-    toast(err.message, "error");
-  } finally {
-    btn.disabled = false;
-    btn.textContent = "List on BrickLink";
   }
 });
 

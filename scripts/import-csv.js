@@ -59,7 +59,6 @@ function importCsv(filePath = CSV_PATH) {
         recommended_price: recommended,
         private_sale_value: recommended,
         ebay_listing_price: recommended,
-        investment_rating: row["Investment Rating (Poor/Average/Good/Excellent)"] || null,
         notes: row["Notes"] || null,
         prices_refreshed_at: new Date().toISOString(),
       });
