@@ -27,6 +27,9 @@ function generateListingText(set) {
 
   lines.push(
     "",
+    "Prices are based on averages from various market sources (BrickLink, eBay sold, etc.). " +
+      "Only offers very close to the asking price will be considered — the price is already fair.",
+    "",
     "From a smoke-free, adult-owned collection.",
     "Happy to send more photos on request.",
     "",

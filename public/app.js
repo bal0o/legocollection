@@ -133,6 +133,98 @@ function bindSortHeaders() {
   updateSortHeaders();
 }
 
+function esc(str) {
+  const d = document.createElement("div");
+  d.textContent = str || "";
+  return d.innerHTML.replace(/"/g, "&quot;");
+}
+
+function actionButtons(id) {
+  return `
+    <button type="button" class="btn btn-sm btn-ghost btn-action" data-history="${id}" title="Price history" aria-label="Price history">📈</button>
+    <button type="button" class="btn btn-sm btn-ghost btn-action" data-refresh="${id}" title="Refresh prices" aria-label="Refresh prices">↻</button>`;
+}
+
+function bindSetInteractions(root) {
+  root.querySelectorAll(".status-select").forEach((sel) => {
+    sel.addEventListener("change", () => onStatusChange(sel));
+  });
+  root.querySelectorAll("[data-refresh]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      refreshSet(btn.dataset.refresh, btn);
+    });
+  });
+  root.querySelectorAll("[data-history]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openHistoryModal(btn.dataset.history);
+    });
+  });
+  root.querySelectorAll("[data-edit-listed]").forEach((cell) => {
+    if (!cell.dataset.editListed) return;
+    cell.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const row = cell.closest("tr, .set-card");
+      const label = `${row.querySelector("strong").textContent} ${row.querySelector(".name").textContent}`;
+      openForSaleModal(cell.dataset.editListed, label, true);
+    });
+  });
+  root.querySelectorAll("[data-edit-sold]").forEach((cell) => {
+    cell.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const row = cell.closest("tr, .set-card");
+      const label = `${row.querySelector("strong").textContent} ${row.querySelector(".name").textContent}`;
+      openSoldModal(cell.dataset.editSold, label, true);
+    });
+  });
+  root.querySelectorAll(".row-clickable").forEach((row) => {
+    row.addEventListener("click", (e) => {
+      if (e.target.closest("button, select, a")) return;
+      openSetDetail(row.dataset.id);
+    });
+  });
+}
+
+function renderSetCards(sets, { showSoldCol, showListedCol }) {
+  const cards = $("#sets-cards");
+  cards.innerHTML = sets
+    .map((s) => {
+      const listedCell =
+        showListedCol && s.listing_status === "for_sale"
+          ? `<button type="button" class="set-card-listed listed-price-edit" data-edit-listed="${s.id}">Listed ${fmtWhole(s.listed_price)}</button>`
+          : "";
+      const soldCell = showSoldCol
+        ? `<button type="button" class="set-card-listed sold-price-edit" data-edit-sold="${s.id}">Sold ${fmt(s.sold_price)}</button>`
+        : "";
+      const qty =
+        s.listing_status === "for_sale"
+          ? `${s.quantity_held ?? 1} held · ${s.quantity_listed ?? 0} listed`
+          : `${s.quantity_held ?? 1} held`;
+      return `
+    <article class="set-card row-${s.listing_status} row-clickable" data-id="${s.id}">
+      <div class="set-card-top">
+        <div class="set-card-title">
+          <strong>${s.set_number}</strong>
+          <span class="name">${esc(s.description)}</span>
+        </div>
+        <span class="set-card-rating rating-${s.investment_rating || "Average"}">${s.investment_rating || "—"}</span>
+      </div>
+      <p class="set-card-condition">${esc(s.condition)} · ${qty}</p>
+      <div class="set-card-status">${statusSelect(s.id, s.listing_status)}</div>
+      <div class="set-card-prices">
+        <div><span class="set-card-price-label">Private</span><strong>${fmtWhole(s.private_sale_value)}</strong></div>
+        <div><span class="set-card-price-label">eBay list</span><strong>${fmtWhole(s.ebay_listing_price)}</strong></div>
+        ${listedCell}
+        ${soldCell}
+      </div>
+      <div class="set-card-actions actions">${actionButtons(s.id)}</div>
+    </article>`;
+    })
+    .join("");
+  bindSetInteractions(cards);
+}
+
 function renderSets(sets) {
   const sorted = sortSets(sets);
   const tbody = $("#sets-body");
@@ -150,6 +242,7 @@ function renderSets(sets) {
 
   if (sorted.length === 0) {
     tbody.innerHTML = "";
+    $("#sets-cards").innerHTML = "";
     empty.classList.remove("hidden");
     return;
   }
@@ -159,67 +252,28 @@ function renderSets(sets) {
     .map(
       (s) => `
     <tr class="row-${s.listing_status} row-clickable" data-id="${s.id}">
-      <td><strong>${s.set_number}</strong></td>
+      <td class="col-set"><strong>${s.set_number}</strong></td>
       <td class="name">${esc(s.description)}</td>
-      <td>${esc(s.condition)}</td>
-      <td>${statusSelect(s.id, s.listing_status)}</td>
-      <td class="num">${s.quantity_held ?? 1}</td>
-      <td class="num">${s.listing_status === "for_sale" ? (s.quantity_listed ?? 0) : "—"}</td>
+      <td class="hide-mobile">${esc(s.condition)}</td>
+      <td class="col-status">${statusSelect(s.id, s.listing_status)}</td>
+      <td class="num hide-mobile">${s.quantity_held ?? 1}</td>
+      <td class="num hide-mobile">${s.listing_status === "for_sale" ? (s.quantity_listed ?? 0) : "—"}</td>
       <td class="num hide-mobile">${fmt(s.uk_rrp)}</td>
-      <td class="num">${fmt(s.bl_used_avg)}</td>
+      <td class="num hide-mobile">${fmt(s.bl_used_avg)}</td>
       <td class="num hide-mobile">${fmt(s.bl_sealed_avg)}</td>
       <td class="num hide-mobile">${fmt(s.ebay_sold_avg)}</td>
-      <td class="num">${fmtWhole(s.private_sale_value)}</td>
-      <td class="num">${fmtWhole(s.ebay_listing_price)}</td>
-      <td class="num listed-col${s.listing_status === "for_sale" ? " listed-price-edit" : ""}${showListedCol ? "" : " hidden"}" data-edit-listed="${s.listing_status === "for_sale" ? s.id : ""}" title="${s.listing_status === "for_sale" ? "Click to edit listed price" : ""}">${s.listing_status === "for_sale" ? fmtWhole(s.listed_price) : "—"}</td>
+      <td class="num col-price">${fmtWhole(s.private_sale_value)}</td>
+      <td class="num hide-mobile">${fmtWhole(s.ebay_listing_price)}</td>
+      <td class="num listed-col hide-mobile${s.listing_status === "for_sale" ? " listed-price-edit" : ""}${showListedCol ? "" : " hidden"}" data-edit-listed="${s.listing_status === "for_sale" ? s.id : ""}" title="${s.listing_status === "for_sale" ? "Click to edit listed price" : ""}">${s.listing_status === "for_sale" ? fmtWhole(s.listed_price) : "—"}</td>
       <td class="num sold-col${showSoldCol ? " sold-price-edit" : " hidden"}" data-edit-sold="${s.id}" title="Click to edit sold price">${fmt(s.sold_price)}</td>
-      <td class="rating-${s.investment_rating || "Average"}">${s.investment_rating || "—"}</td>
-      <td class="col-actions actions">
-        <button class="btn btn-sm btn-ghost" data-history="${s.id}" title="Price history">📈</button>
-        <button class="btn btn-sm btn-ghost" data-refresh="${s.id}" title="Refresh prices">↻</button>
-      </td>
+      <td class="hide-mobile rating-${s.investment_rating || "Average"}">${s.investment_rating || "—"}</td>
+      <td class="col-actions"><div class="actions">${actionButtons(s.id)}</div></td>
     </tr>`
     )
     .join("");
 
-  tbody.querySelectorAll(".status-select").forEach((sel) => {
-    sel.addEventListener("change", () => onStatusChange(sel));
-  });
-  tbody.querySelectorAll("[data-refresh]").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      refreshSet(btn.dataset.refresh, btn);
-    });
-  });
-  tbody.querySelectorAll("[data-history]").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      openHistoryModal(btn.dataset.history);
-    });
-  });
-  tbody.querySelectorAll("[data-edit-listed]").forEach((cell) => {
-    if (!cell.dataset.editListed) return;
-    cell.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const row = cell.closest("tr");
-      const label = `${row.querySelector("strong").textContent} ${row.querySelector(".name").textContent}`;
-      openForSaleModal(cell.dataset.editListed, label, true);
-    });
-  });
-  tbody.querySelectorAll("[data-edit-sold]").forEach((cell) => {
-    cell.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const row = cell.closest("tr");
-      const label = `${row.querySelector("strong").textContent} ${row.querySelector(".name").textContent}`;
-      openSoldModal(cell.dataset.editSold, label, true);
-    });
-  });
-  tbody.querySelectorAll("tr.row-clickable").forEach((row) => {
-    row.addEventListener("click", (e) => {
-      if (e.target.closest("button, select, a")) return;
-      openSetDetail(row.dataset.id);
-    });
-  });
+  bindSetInteractions(tbody);
+  renderSetCards(sorted, { showSoldCol, showListedCol });
 }
 
 async function loadSets() {
@@ -232,7 +286,7 @@ async function loadSets() {
 async function onStatusChange(sel) {
   const id = sel.dataset.statusId;
   const newStatus = sel.value;
-  const row = sel.closest("tr");
+  const row = sel.closest("tr, .set-card");
   const prev = row.className.match(/row-(\w+)/)?.[1] || "collection";
 
   if (newStatus === "sold") {
@@ -260,12 +314,6 @@ async function onStatusChange(sel) {
     sel.value = prev;
     toast(err.message, "error");
   }
-}
-
-function esc(str) {
-  const d = document.createElement("div");
-  d.textContent = str || "";
-  return d.innerHTML.replace(/"/g, "&quot;");
 }
 
 async function refresh() {
