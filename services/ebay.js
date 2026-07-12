@@ -1,5 +1,50 @@
 const GBP_USD = 0.79;
 
+const CLONE_TITLE_PATTERNS = [
+  /\blepin\b/i,
+  /\blele\b/i,
+  /\bdecool\b/i,
+  /\bdogo\b/i,
+  /\bxingbao\b/i,
+  /\bxing bao\b/i,
+  /\bsembo\b/i,
+  /\bcogo\b/i,
+  /\bbela\b/i,
+  /\bkazi\b/i,
+  /\bloz\b/i,
+  /\bsluban\b/i,
+  /\bwooma\b/i,
+  /\bgego\b/i,
+  /\bjiqings\b/i,
+  /\bji qing\b/i,
+  /\bmould king\b/i,
+  /\bmold king\b/i,
+  /\bmoc king\b/i,
+  /\blinhi\b/i,
+  /\blinhui\b/i,
+  /\bquanguan\b/i,
+  /\breobrix\b/i,
+  /\bfake lego\b/i,
+  /\bnot (?:genuine |real |original )?lego\b/i,
+  /\bnon[- ]?lego\b/i,
+  /\bunofficial\b/i,
+  /\bclone\b/i,
+  /\bknock[- ]?off\b/i,
+  /\breplica\b/i,
+  /\bcounterfeit\b/i,
+  /\bimitation\b/i,
+  /\bcompatible with lego\b/i,
+  /\blego compatible\b/i,
+  /\blego style\b/i,
+  /\blego type\b/i,
+  /\bfits lego\b/i,
+  /\blike lego\b/i,
+  /\bgeneric bricks?\b/i,
+  /\boff[- ]brand\b/i,
+  /\balternative to lego\b/i,
+  /\bbuilding blocks only\b/i,
+];
+
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
@@ -14,6 +59,61 @@ function toGbp(usd) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isPartialListing(title) {
+  const text = String(title || "").replace(/\s+/g, " ").trim();
+  if (!text) return false;
+
+  if (
+    /\binstructions?\s+only\b/i.test(text) ||
+    /\binstruction\s+manual\b/i.test(text) ||
+    /\bmanual\s+only\b/i.test(text) ||
+    /\bbox\s+only\b/i.test(text) ||
+    /\bparts?\s+only\b/i.test(text) ||
+    /\bminifigs?\s+only\b/i.test(text) ||
+    /\bfigures?\s+only\b/i.test(text) ||
+    /\bsticker/i.test(text) ||
+    /\bbooklet\s+only\b/i.test(text) ||
+    /\binstructions?\s*\/\s*instruction/i.test(text) ||
+    /\bno\s+(?:bricks|pieces)\b/i.test(text) ||
+    /\bbricks?\s+not\s+included\b/i.test(text)
+  ) {
+    return true;
+  }
+
+  // Minifig-only listings often mention figs without complete/built/pieces.
+  if (
+    /\b(?:minifig|figure|figs?)\b/i.test(text) &&
+    !/\b(?:complete|built|pieces|pcs|set|ucs|\d{3,4}\s*pieces)\b/i.test(text)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function isCloneListing(title) {
+  const text = String(title || "").replace(/\s+/g, " ").trim();
+  if (!text) return false;
+  return CLONE_TITLE_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function filterAuthenticListings(listings, setNumber) {
+  return listings.filter((listing) => {
+    if (isCloneListing(listing.title)) return false;
+    if (isPartialListing(listing.title)) return false;
+    const title = String(listing.title || "").toLowerCase();
+    if (!/\blego\b/.test(title)) return false;
+    if (setNumber && title.includes(String(setNumber))) return true;
+    return false;
+  });
+}
+
+function ebaySearchQuery(setNumber) {
+  const excludes = ["lepin", "decool", "mould", "moldking", "linhi", "compatible", "replica", "clone"];
+  const negative = excludes.map((term) => `-${term}`).join(" ");
+  return encodeURIComponent(`lego ${setNumber} ${negative}`);
 }
 
 function hasPriceData(html) {
@@ -92,24 +192,40 @@ function parseSummaryPrices(html) {
   };
 }
 
+function decodeHtml(text) {
+  return String(text || "")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+}
+
 function parseSoldListings(html, limit = 30) {
   const sales = [];
-  const rowRe =
-    /(\d{4}-\d{2}-\d{2})[\s\S]*?\[eBay\][\s\S]*?<span class="js-price"[^>]*>\$([\d.]+)<\/span>/gi;
-  let m;
-  while ((m = rowRe.exec(html)) !== null && sales.length < limit) {
-    const date = m[1];
-    const priceUsd = parseFloat(m[2]);
-    if (!Number.isFinite(priceUsd)) continue;
-    const block = m[0];
-    const titleMatch = block.match(/>\s*([^<]{10,200})\s*<\/a>\s*[\s\S]*?\[eBay\]/i);
+  const rows = html.split(/<tr\b/i);
+
+  for (const row of rows) {
+    if (!row.includes("js-ebay-completed-sale")) continue;
+
+    const date = row.match(/<td class="date">(\d{4}-\d{2}-\d{2})<\/td>/i)?.[1] || null;
+    const title = decodeHtml(
+      row.match(/class="js-ebay-completed-sale"[^>]*href="[^"]*"[^>]*>\s*([^<]+)<\/a>/i)?.[1] || ""
+    )
+      .replace(/\s+/g, " ")
+      .trim();
+    const priceUsd = parseFloat(row.match(/<span class="js-price"[^>]*>\s*\$([\d.]+)/i)?.[1] || "");
+
+    if (!Number.isFinite(priceUsd) || !title) continue;
     sales.push({
       date,
-      title: titleMatch ? titleMatch[1].replace(/\s+/g, " ").trim() : "",
+      title,
       price_usd: priceUsd,
       price_gbp: toGbp(priceUsd),
     });
+    if (sales.length >= limit * 3) break;
   }
+
   return sales;
 }
 
@@ -121,24 +237,68 @@ function pickConditionAvg(summary, condition) {
   return summary.complete_usd || summary.loose_usd;
 }
 
-function buildEbayResult({ url, html }, condition) {
+function buildEbayResult({ url, html }, condition, setNumber) {
   const summary = parseSummaryPrices(html);
-  const sales = parseSoldListings(html);
+  const allSales = parseSoldListings(html, 100);
+  const sales = filterAuthenticListings(allSales, setNumber);
+  const salePrices = sales.map((s) => s.price_gbp).filter((p) => p > 0);
   const condUsd = pickConditionAvg(summary, condition);
-  const salePrices = sales.map((s) => s.price_gbp);
+  const summaryGbp = condUsd ? toGbp(condUsd) : null;
+
+  // PriceCharting's condition summary is more reliable than averaging raw sales,
+  // which mix in instructions-only, box-only, and minifig listings.
+  const filteredMedian = median(salePrices);
+  let ebaySoldAvg = summaryGbp;
+  let ebaySoldMedian = summaryGbp;
+
+  if (salePrices.length >= 5 && summaryGbp && filteredMedian) {
+    const ratio = filteredMedian / summaryGbp;
+    // If filtered complete-set sales broadly agree with the summary, nudge toward them.
+    if (ratio >= 0.75 && ratio <= 1.25) {
+      ebaySoldAvg = round(filteredMedian * 0.35 + summaryGbp * 0.65);
+      ebaySoldMedian = round(filteredMedian * 0.25 + summaryGbp * 0.75);
+    }
+  } else if (!summaryGbp && salePrices.length > 0) {
+    ebaySoldAvg = salePrices.length >= 3 ? avg(salePrices) : median(salePrices);
+    ebaySoldMedian = median(salePrices) ?? ebaySoldAvg;
+  }
 
   return {
-    ebay_sold_avg: condUsd ? toGbp(condUsd) : avg(salePrices),
-    ebay_sold_median: median(salePrices),
+    ebay_sold_avg: ebaySoldAvg,
+    ebay_sold_median: ebaySoldMedian,
     ebay_sold_count: sales.length,
     ebay_sold_recent: sales.slice(0, 10),
     ebay_source: "pricecharting",
-    ebay_error: null,
+    ebay_error: sales.length === 0 && !summaryGbp ? "No authentic LEGO eBay sales found" : null,
     ebay_url: url,
   };
 }
 
-function parseActiveListingPrices(html) {
+function parseActiveListings(html) {
+  const listings = [];
+  const chunks = html.split(/s-item__wrapper/i).slice(1);
+
+  for (const chunk of chunks) {
+    const title =
+      chunk.match(/s-item__title[\s\S]*?<(?:span|div)[^>]*>([^<]+)/i)?.[1] ||
+      chunk.match(/class="[^"]*s-item__title[^"]*"[^>]*>([^<]+)/i)?.[1];
+    const priceMatch =
+      chunk.match(/s-item__price[^>]*>\s*£([\d,.]+)/i) ||
+      chunk.match(/s-item__price[^>]*>[\s\S]*?£([\d,.]+)/i);
+
+    if (!title || !priceMatch) continue;
+
+    const price = parseFloat(String(priceMatch[1]).replace(/,/g, ""));
+    if (!Number.isFinite(price) || price < 10 || price > 5000) continue;
+
+    listings.push({
+      title: title.replace(/\s+/g, " ").trim(),
+      price,
+    });
+  }
+
+  if (listings.length > 0) return listings;
+
   const prices = [];
   const patterns = [
     /s-item__price[^>]*>\s*£([\d,.]+)/gi,
@@ -154,7 +314,12 @@ function parseActiveListingPrices(html) {
     }
   }
 
-  return [...new Set(prices)];
+  return [...new Set(prices)].map((price) => ({ title: "", price }));
+}
+
+function parseActiveListingPrices(html, setNumber) {
+  const listings = filterAuthenticListings(parseActiveListings(html), setNumber);
+  return listings.map((listing) => listing.price);
 }
 
 async function fetchEbayActiveAsks(setNumber) {
@@ -166,12 +331,11 @@ async function fetchEbayActiveAsks(setNumber) {
     ebay_ask_error: null,
   };
 
-  const query = encodeURIComponent(`lego ${setNumber}`);
-  const url = `https://www.ebay.co.uk/sch/i.html?_nkw=${query}&LH_BIN=1&_sop=15&rt=nc&_dcat=19006`;
+  const url = `https://www.ebay.co.uk/sch/i.html?_nkw=${ebaySearchQuery(setNumber)}&LH_BIN=1&_sop=15&rt=nc&_dcat=19006`;
 
   try {
     const html = await fetchText(url, { retries: 1, fastFailStatuses: [403, 503] });
-    const prices = parseActiveListingPrices(html);
+    const prices = parseActiveListingPrices(html, setNumber);
     if (prices.length === 0) {
       result.ebay_ask_error = "No active eBay listings found";
       return result;
@@ -205,7 +369,7 @@ async function fetchEbaySoldData(setNumber, condition) {
       result.ebay_error = "No PriceCharting listing found";
       return result;
     }
-    return buildEbayResult(page, condition);
+    return buildEbayResult(page, condition, setNumber);
   } catch (err) {
     result.ebay_error = err.message;
     return result;
@@ -215,7 +379,11 @@ async function fetchEbaySoldData(setNumber, condition) {
 module.exports = {
   fetchEbaySoldData,
   fetchEbayActiveAsks,
-  toGbp,
+  isCloneListing,
+  isPartialListing,
+  filterAuthenticListings,
   parseSoldListings,
+  parseActiveListingPrices,
+  toGbp,
   sleep,
 };
