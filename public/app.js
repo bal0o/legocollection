@@ -635,10 +635,17 @@ async function openSetDetailAsync(id) {
   $("#detail-private").textContent = fmtWhole(set.private_sale_value);
   $("#detail-ebay").textContent = fmtWhole(set.ebay_listing_price);
 
+  const isBnib = (set.condition || "").toLowerCase().includes("bnib");
+  const stockAvg = isBnib ? set.bl_sealed_stock_avg : set.bl_used_stock_avg;
+  const stockMin = isBnib ? set.bl_sealed_stock_min : set.bl_used_stock_min;
+
   $("#detail-stats").innerHTML = [
-    ["BrickLink used", fmt(set.bl_used_avg)],
-    ["BrickLink sealed", fmt(set.bl_sealed_avg)],
+    ["BrickLink used (sold)", fmt(set.bl_used_avg)],
+    ["BrickLink sealed (sold)", fmt(set.bl_sealed_avg)],
+    ["BL listings avg", fmt(stockAvg)],
+    ["BL listings from", fmt(stockMin)],
     ["eBay sold avg", fmt(set.ebay_sold_avg)],
+    ["eBay asks from", fmt(set.ebay_ask_min)],
     ["UK RRP", fmt(set.uk_rrp)],
     ["Rating", set.investment_rating || "—"],
   ]

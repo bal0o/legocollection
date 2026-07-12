@@ -87,10 +87,10 @@ function normalizeSetNo(setNumber) {
   return num.includes("-") ? num : `${num}-1`;
 }
 
-async function getPriceGuide(setNumber, { newOrUsed = "U", countryCode, currencyCode = "GBP", region } = {}) {
+async function getPriceGuide(setNumber, { newOrUsed = "U", guideType = "sold", countryCode, currencyCode = "GBP", region } = {}) {
   const itemNo = normalizeSetNo(setNumber);
   const query = {
-    guide_type: "sold",
+    guide_type: guideType,
     new_or_used: newOrUsed,
     currency_code: currencyCode,
   };
@@ -113,31 +113,76 @@ async function getPriceGuide(setNumber, { newOrUsed = "U", countryCode, currency
   };
 }
 
+const validPrice = (p) => p != null && p > 0;
+
 async function getSetPrices(setNumber) {
   // Prefer UK sales; fall back to Europe then global if sparse
-  const attempts = [
-    { countryCode: "GB" },
-    { region: "europe" },
-    {},
-  ];
+  const attempts = [{ countryCode: "GB" }, { region: "europe" }, {}];
 
-  let used = null;
-  let sealed = null;
+  let usedSold = null;
+  let sealedSold = null;
+  let usedStock = null;
+  let sealedStock = null;
+
+  const needsMore = () =>
+    !validPrice(usedSold?.price) ||
+    !validPrice(sealedSold?.price) ||
+    !validPrice(usedStock?.price) ||
+    !validPrice(sealedStock?.price);
 
   for (const opts of attempts) {
-    if (!used?.price) used = await getPriceGuide(setNumber, { newOrUsed: "U", ...opts });
-    if (!sealed?.price) sealed = await getPriceGuide(setNumber, { newOrUsed: "N", ...opts });
-    if (used?.price && sealed?.price) break;
+    const fetches = [];
+    if (!validPrice(usedSold?.price)) {
+      fetches.push(
+        getPriceGuide(setNumber, { newOrUsed: "U", guideType: "sold", ...opts }).then((r) => {
+          usedSold = r;
+        })
+      );
+    }
+    if (!validPrice(sealedSold?.price)) {
+      fetches.push(
+        getPriceGuide(setNumber, { newOrUsed: "N", guideType: "sold", ...opts }).then((r) => {
+          sealedSold = r;
+        })
+      );
+    }
+    if (!validPrice(usedStock?.price)) {
+      fetches.push(
+        getPriceGuide(setNumber, { newOrUsed: "U", guideType: "stock", ...opts }).then((r) => {
+          usedStock = r;
+        })
+      );
+    }
+    if (!validPrice(sealedStock?.price)) {
+      fetches.push(
+        getPriceGuide(setNumber, { newOrUsed: "N", guideType: "stock", ...opts }).then((r) => {
+          sealedStock = r;
+        })
+      );
+    }
+    if (fetches.length) await Promise.all(fetches);
+    if (!needsMore()) break;
   }
 
-  const validPrice = (p) => p != null && p > 0;
+  const stockMin = (guide) =>
+    guide?.min_price > 0 ? Math.round(guide.min_price * 100) / 100 : null;
 
   return {
-    bl_used_avg: validPrice(used?.price) ? used.price : null,
-    bl_sealed_avg: validPrice(sealed?.price) ? sealed.price : null,
-    bl_used_detail: used,
-    bl_sealed_detail: sealed,
-    source_bl: validPrice(used?.price) || validPrice(sealed?.price),
+    bl_used_avg: validPrice(usedSold?.price) ? usedSold.price : null,
+    bl_sealed_avg: validPrice(sealedSold?.price) ? sealedSold.price : null,
+    bl_used_stock_avg: validPrice(usedStock?.price) ? usedStock.price : null,
+    bl_used_stock_min: stockMin(usedStock),
+    bl_sealed_stock_avg: validPrice(sealedStock?.price) ? sealedStock.price : null,
+    bl_sealed_stock_min: stockMin(sealedStock),
+    bl_used_detail: usedSold,
+    bl_sealed_detail: sealedSold,
+    bl_used_stock_detail: usedStock,
+    bl_sealed_stock_detail: sealedStock,
+    source_bl:
+      validPrice(usedSold?.price) ||
+      validPrice(sealedSold?.price) ||
+      validPrice(usedStock?.price) ||
+      validPrice(sealedStock?.price),
   };
 }
 

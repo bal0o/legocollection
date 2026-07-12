@@ -129,7 +129,7 @@ async function refreshAllSets({
       });
 
       try {
-        const pricing = await fetchPricing(set.set_number, set.condition, set.slug, set.price_history);
+        const pricing = await fetchPricing(set.set_number, set.condition, set.slug, set.price_history, set);
         store.updateSet(set.id, pricing);
         results.refreshed++;
         onProgress?.({

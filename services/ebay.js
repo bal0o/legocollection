@@ -135,6 +135,56 @@ function buildEbayResult({ url, html }, condition) {
   };
 }
 
+function parseActiveListingPrices(html) {
+  const prices = [];
+  const patterns = [
+    /s-item__price[^>]*>\s*£([\d,.]+)/gi,
+    /"price":\s*"([\d.]+)"/gi,
+    /"priceValue":\s*([\d.]+)/gi,
+  ];
+
+  for (const re of patterns) {
+    let m;
+    while ((m = re.exec(html)) !== null) {
+      const n = parseFloat(String(m[1]).replace(",", ""));
+      if (Number.isFinite(n) && n >= 10 && n <= 5000) prices.push(n);
+    }
+  }
+
+  return [...new Set(prices)];
+}
+
+async function fetchEbayActiveAsks(setNumber) {
+  const result = {
+    ebay_ask_min: null,
+    ebay_ask_median: null,
+    ebay_ask_avg: null,
+    ebay_ask_count: 0,
+    ebay_ask_error: null,
+  };
+
+  const query = encodeURIComponent(`lego ${setNumber}`);
+  const url = `https://www.ebay.co.uk/sch/i.html?_nkw=${query}&LH_BIN=1&_sop=15&rt=nc&_dcat=19006`;
+
+  try {
+    const html = await fetchText(url);
+    const prices = parseActiveListingPrices(html);
+    if (prices.length === 0) {
+      result.ebay_ask_error = "No active eBay listings found";
+      return result;
+    }
+
+    result.ebay_ask_min = Math.min(...prices);
+    result.ebay_ask_median = median(prices);
+    result.ebay_ask_avg = avg(prices);
+    result.ebay_ask_count = prices.length;
+    return result;
+  } catch (err) {
+    result.ebay_ask_error = err.message;
+    return result;
+  }
+}
+
 async function fetchEbaySoldData(setNumber, condition) {
   const result = {
     ebay_sold_avg: null,
@@ -161,6 +211,7 @@ async function fetchEbaySoldData(setNumber, condition) {
 
 module.exports = {
   fetchEbaySoldData,
+  fetchEbayActiveAsks,
   toGbp,
   parseSoldListings,
   sleep,

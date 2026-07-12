@@ -1,11 +1,12 @@
 const { getSetPrices } = require("./bricklink");
-const { fetchEbaySoldData } = require("./ebay");
+const { fetchEbaySoldData, fetchEbayActiveAsks } = require("./ebay");
 const {
   suggestListingPrices,
   buildPriceSnapshot,
   appendPriceHistory,
 } = require("./marketplaces");
 const { generateListingText } = require("./listing");
+const { fetchBricksetRetail, preserveRetailFields, parseBrickEconomyRetail } = require("./retail");
 const GBP_USD = 0.79;
 const GBP_EUR = 0.86;
 
@@ -193,7 +194,16 @@ async function fetchBrickLinkPrices(setNumber) {
   try {
     return await getSetPrices(setNumber);
   } catch (err) {
-    return { bl_used_avg: null, bl_sealed_avg: null, source_bl: false, bl_error: err.message };
+    return {
+      bl_used_avg: null,
+      bl_sealed_avg: null,
+      bl_used_stock_avg: null,
+      bl_used_stock_min: null,
+      bl_sealed_stock_avg: null,
+      bl_sealed_stock_min: null,
+      source_bl: false,
+      bl_error: err.message,
+    };
   }
 }
 
@@ -231,36 +241,21 @@ async function fetchBrickEconomyDetails(setNumber, slugHint) {
 
   if (!html) return null;
 
-  const ukRrp = html.match(/United Kingdom[\s\S]*?£([\d.]+)/i);
-  const year = html.match(/Year[\s\S]*?(\d{4})/i);
+  const parsed = parseBrickEconomyRetail(html);
+  const h1 = html.match(/Name[\s\S]*?>([^<]+)</i);
   const usedUsd = html.match(/Used[\s\S]*?Value[\s\S]*?\$([\d,.]+)/i);
   const sealedUsd = html.match(/New\/Sealed[\s\S]*?Value[\s\S]*?\$([\d,.]+)/i);
   const marketUsd = html.match(/Market price[\s\S]*?\$([\d,.]+)/i);
-  const retailUsd = html.match(/Retail price[\s\S]*?\$([\d,.]+)/i);
-
-  let retirement_status = null;
-  if (/Availability[\s\S]*?Retired/i.test(html)) retirement_status = "Retired";
-  else if (/Available at retail/i.test(html)) retirement_status = "Available at Retail";
-  else if (/Exclusive/i.test(html)) retirement_status = "Exclusive (Retail)";
-
-  const retiredDate = html.match(/Retired[\s\S]*?(\w+ \d{4})/i);
-
-  const nameMatch = html.match(/<title>LEGO \d+[^|]*\| BrickEconomy<\/title>/i);
-  let name = `Set ${setNumber}`;
-  const h1 = html.match(/Name[\s\S]*?>([^<]+)</i);
-  if (h1) name = h1[1].trim();
-
-  const stillAtRetail = retirement_status === "Available at Retail" || retirement_status === "Exclusive (Retail)";
 
   return {
-    description: name,
-    uk_rrp: ukRrp ? parseFloat(ukRrp[1]) : null,
-    release_year: year ? parseInt(year[1], 10) : null,
-    retirement_status,
-    retirement_date: retiredDate?.[1] || null,
+    ...parsed,
+    description: h1?.[1]?.trim() || `Set ${setNumber}`,
     bl_used_avg: usedUsd ? toGbp(parseMoney(usedUsd[1])) : null,
-    bl_sealed_avg: sealedUsd ? toGbp(parseMoney(sealedUsd[1])) : marketUsd ? toGbp(parseMoney(marketUsd[1])) : null,
-    uk_retail_price: stillAtRetail && ukRrp ? parseFloat(ukRrp[1]) : null,
+    bl_sealed_avg: sealedUsd
+      ? toGbp(parseMoney(sealedUsd[1]))
+      : marketUsd
+        ? toGbp(parseMoney(marketUsd[1]))
+        : null,
     prices_refreshed_at: new Date().toISOString(),
     source_be: true,
   };
@@ -287,44 +282,71 @@ function ratingFromData(data) {
   return "Poor";
 }
 
-async function fetchPricing(setNumber, condition, slugHint, existingHistory = []) {
+async function fetchPricing(setNumber, condition, slugHint, existingHistory = [], existingSet = {}) {
   const num = normalizeSetNumber(setNumber);
-  const [meta, be, bl, ebay] = await Promise.allSettled([
+  const [meta, be, bl, ebay, ebayAsks] = await Promise.allSettled([
     lookupSetMetadata(num),
     fetchBrickEconomyDetails(num, slugHint),
     fetchBrickLinkPrices(num),
     fetchEbaySoldData(num, condition),
+    fetchEbayActiveAsks(num),
   ]);
 
   const metaData = meta.status === "fulfilled" ? meta.value : null;
-  const beData = be.status === "fulfilled" ? be.value : {};
+  const beData = be.status === "fulfilled" && be.value ? be.value : {};
   const blData = bl.status === "fulfilled" ? bl.value : {};
   const ebayData = ebay.status === "fulfilled" ? ebay.value : {};
+  const ebayAskData = ebayAsks.status === "fulfilled" ? ebayAsks.value : {};
   const slug = slugHint || metaData?.slug || beData?.slug;
+
+  let bricksetRetail = {};
+  try {
+    bricksetRetail = await fetchBricksetRetail(num);
+  } catch {
+    bricksetRetail = {};
+  }
+
+  const ukRrp = bricksetRetail.uk_rrp ?? beData.uk_rrp ?? null;
+  const retirementStatus = bricksetRetail.retirement_status ?? beData.retirement_status ?? null;
+  const atRetail =
+    (retirementStatus || "").includes("Retail") || (retirementStatus || "").includes("Exclusive");
 
   const merged = {
     set_number: num,
     condition: condition || "Complete, dismantled",
     description: metaData?.name || beData?.description || `Set ${num}`,
-    release_year: metaData?.year || beData?.release_year || null,
+    release_year: metaData?.year || bricksetRetail.release_year || beData?.release_year || null,
     slug,
     ...beData,
+    uk_rrp: ukRrp,
+    retirement_status: retirementStatus,
+    retirement_date: bricksetRetail.retirement_date ?? beData.retirement_date ?? null,
+    uk_retail_price: ukRrp && atRetail ? ukRrp : null,
     description: metaData?.name || beData?.description || `Set ${num}`,
     bl_used_avg: blData.bl_used_avg ?? beData?.bl_used_avg ?? null,
     bl_sealed_avg: blData.bl_sealed_avg ?? beData?.bl_sealed_avg ?? null,
+    bl_used_stock_avg: blData.bl_used_stock_avg ?? null,
+    bl_used_stock_min: blData.bl_used_stock_min ?? null,
+    bl_sealed_stock_avg: blData.bl_sealed_stock_avg ?? null,
+    bl_sealed_stock_min: blData.bl_sealed_stock_min ?? null,
     image_url: metaData?.image_url || null,
     num_parts: metaData?.num_parts || null,
     ...ebayData,
+    ...ebayAskData,
     prices_refreshed_at: new Date().toISOString(),
     notes: [
       metaData?.source === "rebrickable" ? "Rebrickable" : null,
-      blData?.source_bl ? "BrickLink API (6mo sold, GBP)" : blData?.bl_error ? `BrickLink: ${blData.bl_error}` : null,
+      blData?.source_bl ? "BrickLink API (sold + stock, GBP)" : blData?.bl_error ? `BrickLink: ${blData.bl_error}` : null,
       ebayData?.ebay_source ? `eBay sold via ${ebayData.ebay_source}` : ebayData?.ebay_error ? `eBay: ${ebayData.ebay_error}` : null,
+      ebayAskData?.ebay_ask_count ? `eBay asks (${ebayAskData.ebay_ask_count} listings)` : null,
       beData?.source_be ? "BrickEconomy metadata" : null,
+      bricksetRetail?.uk_rrp ? "Brickset RRP" : null,
     ]
       .filter(Boolean)
       .join(" · ") || "Auto-fetched",
   };
+
+  preserveRetailFields(merged, existingSet);
 
   const estimates = suggestListingPrices(merged, condition);
   merged.investment_rating = ratingFromData(merged);

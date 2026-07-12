@@ -116,7 +116,7 @@ app.post("/api/sets/:id/refresh", async (req, res) => {
     const set = store.getSet(Number(req.params.id));
     if (!set) return res.status(404).json({ error: "Set not found" });
 
-    const pricing = await fetchPricing(set.set_number, set.condition, set.slug, set.price_history);
+    const pricing = await fetchPricing(set.set_number, set.condition, set.slug, set.price_history, set);
     const updated = store.updateSet(set.id, pricing);
     res.json(updated);
   } catch (err) {
