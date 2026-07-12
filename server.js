@@ -215,6 +215,9 @@ app.patch("/api/sets/:id", async (req, res) => {
   }
 
   const updated = store.updateSet(set.id, body);
+  if (body.missing_pieces !== undefined) {
+    updated.listing_text = generateListingText(updated);
+  }
   res.json(updated);
 });
 

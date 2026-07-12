@@ -571,7 +571,9 @@ function renderMissingPiecesList(pieces) {
 
   list.innerHTML = pieces
     .map(
-      (piece, index) => `
+      (piece, index) => {
+        const qty = Math.max(1, parseInt(piece.quantity, 10) || 1);
+        return `
     <li class="missing-piece-item">
       <div class="missing-piece-thumb">
         ${
@@ -583,13 +585,28 @@ function renderMissingPiecesList(pieces) {
       <div class="missing-piece-info">
         <strong>${esc(piece.piece_number)}</strong>
         <span>${esc(piece.name || piece.lookup_error || "Unknown part")}</span>
-        ${(piece.quantity ?? 1) > 1 ? `<span class="missing-piece-qty">×${piece.quantity}</span>` : ""}
         ${piece.bag ? `<span class="missing-piece-bag">Bag ${esc(piece.bag)}</span>` : ""}
       </div>
+      <div class="missing-piece-qty-controls">
+        <button type="button" class="btn btn-sm btn-ghost missing-btn-qty" data-index="${index}" data-delta="-1" title="Decrease quantity" aria-label="Decrease quantity">−</button>
+        <span class="missing-piece-qty-value">${qty}</span>
+        <button type="button" class="btn btn-sm btn-ghost missing-btn-qty" data-index="${index}" data-delta="1" title="Increase quantity" aria-label="Increase quantity">+</button>
+      </div>
       <button type="button" class="btn btn-sm btn-ghost missing-btn-remove" data-index="${index}" title="Remove" aria-label="Remove">×</button>
-    </li>`
+    </li>`;
+      }
     )
     .join("");
+
+  list.querySelectorAll(".missing-btn-qty").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      adjustMissingPieceQuantity(
+        parseInt(btn.dataset.index, 10),
+        parseInt(btn.dataset.delta, 10)
+      );
+    });
+  });
 
   list.querySelectorAll(".missing-btn-remove").forEach((btn) => {
     btn.addEventListener("click", (e) => {
@@ -597,6 +614,43 @@ function renderMissingPiecesList(pieces) {
       removeMissingPiece(parseInt(btn.dataset.index, 10));
     });
   });
+}
+
+function applyMissingPiecesUpdate(updated) {
+  if (!updated) return;
+  detailCurrentSet = updated;
+  const idx = cachedSets.findIndex((s) => String(s.id) === String(detailTargetId));
+  if (idx >= 0) {
+    cachedSets[idx] = { ...cachedSets[idx], ...updated };
+  }
+  renderMissingPiecesList(updated.missing_pieces || []);
+  if (updated.listing_text) {
+    $("#detail-listing-text").value = updated.listing_text;
+  }
+  updateMissingSectionVisibility($("#detail-condition").value, updated.missing_pieces);
+  renderSets(cachedSets);
+  loadStats();
+}
+
+async function adjustMissingPieceQuantity(index, delta) {
+  if (!detailCurrentSet) return;
+  const pieces = storedMissingPieces(detailCurrentSet.missing_pieces);
+  const piece = pieces[index];
+  if (!piece) return;
+
+  const nextQty = (parseInt(piece.quantity, 10) || 1) + delta;
+  if (nextQty < 1) {
+    await removeMissingPiece(index);
+    return;
+  }
+
+  piece.quantity = nextQty;
+  try {
+    const updated = await saveMissingPieces(pieces);
+    applyMissingPiecesUpdate(updated);
+  } catch (err) {
+    toast(err.message, "error");
+  }
 }
 
 async function saveMissingPieces(pieces) {
@@ -617,10 +671,9 @@ async function removeMissingPiece(index) {
   const pieces = storedMissingPieces(detailCurrentSet.missing_pieces);
   pieces.splice(index, 1);
   try {
-    await saveMissingPieces(pieces);
+    const updated = await saveMissingPieces(pieces);
+    applyMissingPiecesUpdate(updated);
     toast("Missing piece removed");
-    await openSetDetailAsync(detailTargetId);
-    await refresh();
   } catch (err) {
     toast(err.message, "error");
   }
@@ -791,8 +844,8 @@ $("#missing-btn-add").addEventListener("click", async () => {
       });
     }
     toast("Missing piece added");
-    await openSetDetailAsync(detailTargetId);
-    await refresh();
+    applyMissingPiecesUpdate(updated);
+    populateDetailManageForm(detailCurrentSet);
   } catch (err) {
     toast(err.message, "error");
   } finally {
