@@ -36,14 +36,6 @@ function fmtPctPlain(pct) {
   return `${sign}${pct.toFixed(1)}%`;
 }
 
-function enrichItem(item) {
-  return {
-    ...item,
-    rec_private: item.recommended.private_sale_value,
-    rec_ebay: item.recommended.ebay_listing_price,
-  };
-}
-
 function sortItems(items) {
   const dir = sortDir === "asc" ? 1 : -1;
   return [...items].sort((a, b) => {
@@ -58,7 +50,12 @@ function sortItems(items) {
     if (sortColumn === "sold_date") {
       return String(av || "").localeCompare(String(bv || "")) * dir;
     }
-    if (sortColumn.startsWith("vs_") || sortColumn.startsWith("rec_") || sortColumn === "sold_price" || sortColumn === "uk_rrp") {
+    if (
+      sortColumn.startsWith("vs_") ||
+      sortColumn === "recommended_price" ||
+      sortColumn === "sold_price" ||
+      sortColumn === "uk_rrp"
+    ) {
       av = av ?? -9999;
       bv = bv ?? -9999;
       return (av - bv) * dir;
@@ -87,7 +84,10 @@ function bindSortHeaders() {
         sortDir = sortDir === "asc" ? "desc" : "asc";
       } else {
         sortColumn = col;
-        sortDir = col === "sold_date" || col.startsWith("vs_") || col === "sold_price" || col === "uk_rrp" ? "desc" : "asc";
+        sortDir =
+          col === "sold_date" || col.startsWith("vs_") || col === "sold_price" || col === "uk_rrp"
+            ? "desc"
+            : "asc";
       }
       updateSortHeaders();
       renderItems(cachedItems);
@@ -99,13 +99,13 @@ function bindSortHeaders() {
 function renderSummary(summary) {
   $("#stat-count").textContent = summary.count;
   $("#stat-revenue").textContent = fmt(summary.total_sold);
-  $("#stat-recommended").textContent = fmt(summary.total_private_recommended);
-  $("#stat-avg-pct").innerHTML = fmtPct(summary.avg_vs_private_pct).replace("pct ", "pct stat-pct ");
-  $("#stat-total-pct").innerHTML = fmtPct(summary.total_vs_private_pct).replace("pct ", "pct stat-pct ");
+  $("#stat-recommended").textContent = fmt(summary.total_recommended);
+  $("#stat-avg-pct").innerHTML = fmtPct(summary.avg_vs_recommended_pct).replace("pct ", "pct stat-pct ");
+  $("#stat-total-pct").innerHTML = fmtPct(summary.total_vs_recommended_pct).replace("pct ", "pct stat-pct ");
 }
 
 function renderItems(items) {
-  const sorted = sortItems(items.map(enrichItem));
+  const sorted = sortItems(items);
   const tbody = $("#sold-body");
   const tfoot = $("#sold-foot");
   const empty = $("#empty-state");
@@ -128,10 +128,8 @@ function renderItems(items) {
       <td class="hide-mobile">${esc(item.condition)}</td>
       <td class="num hide-mobile">${fmt(item.uk_rrp)}</td>
       <td class="num sold-price">${fmt(item.sold_price)}</td>
-      <td class="num hide-mobile">${fmtWhole(item.rec_private)}</td>
-      <td class="num">${fmtPct(item.vs_private_pct)}</td>
-      <td class="num hide-mobile">${fmtWhole(item.rec_ebay)}</td>
-      <td class="num hide-mobile">${fmtPct(item.vs_ebay_pct)}</td>
+      <td class="num hide-mobile">${fmtWhole(item.recommended_price)}</td>
+      <td class="num">${fmtPct(item.vs_recommended_pct)}</td>
     </tr>`
     )
     .join("");
@@ -142,9 +140,8 @@ function renderItems(items) {
       <td colspan="4"><strong>Totals / average</strong></td>
       <td class="num hide-mobile"></td>
       <td class="num"><strong>${fmt(cachedSummary.total_sold)}</strong></td>
-      <td class="num hide-mobile"><strong>${fmtWhole(cachedSummary.total_private_recommended)}</strong></td>
-      <td class="num"><strong>${fmtPctPlain(cachedSummary.avg_vs_private_pct)}</strong></td>
-      <td class="num hide-mobile" colspan="2"></td>
+      <td class="num hide-mobile"><strong>${fmtWhole(cachedSummary.total_recommended)}</strong></td>
+      <td class="num"><strong>${fmtPctPlain(cachedSummary.avg_vs_recommended_pct)}</strong></td>
     </tr>`;
   }
 }

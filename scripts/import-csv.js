@@ -38,6 +38,13 @@ function importCsv(filePath = CSV_PATH) {
       }
 
       const rrpRaw = row["Original UK RRP"];
+      const privateVal = parseGbp(row["Estimated Private Sale Value"]);
+      const ebayVal = parseGbp(row["Recommended eBay Listing Price"]);
+      const recommended =
+        privateVal != null && ebayVal != null
+          ? Math.max(privateVal, ebayVal)
+          : privateVal ?? ebayVal;
+
       store.createSet({
         set_number: setNumber,
         description: row["Description"] || "",
@@ -49,9 +56,9 @@ function importCsv(filePath = CSV_PATH) {
         bl_used_avg: parseGbp(row["BrickLink 6 Month Used Average"]),
         bl_sealed_avg: parseGbp(row["BrickLink New/Sealed Average"]),
         uk_retail_price: parseGbp(row["Current UK Retail Price"]),
-        private_sale_value: parseGbp(row["Estimated Private Sale Value"]),
-        ebay_listing_price: parseGbp(row["Recommended eBay Listing Price"]),
-        quick_sale_price: parseGbp(row["Estimated Quick Sale Price"]),
+        recommended_price: recommended,
+        private_sale_value: recommended,
+        ebay_listing_price: recommended,
         investment_rating: row["Investment Rating (Poor/Average/Good/Excellent)"] || null,
         notes: row["Notes"] || null,
         prices_refreshed_at: new Date().toISOString(),

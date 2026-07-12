@@ -47,7 +47,7 @@ function generateListingText(set) {
 
   lines.push(
     "",
-    "Prices are based on averages from various market sources (BrickLink, eBay sold, etc.). " +
+    "Prices are based on BrickLink sold and listing data, eBay sold prices, and UK RRP where relevant. " +
       "Only offers very close to the asking price will be considered — the price is already fair.",
     "",
     "From a smoke-free, adult-owned collection.",

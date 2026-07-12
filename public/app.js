@@ -4,6 +4,11 @@ const $$ = (sel) => document.querySelectorAll(sel);
 const fmt = (n) => (n == null ? "—" : `£${Number(n).toFixed(2)}`);
 const fmtWhole = (n) => (n == null ? "—" : `£${Number(n)}`);
 
+function recommendedPrice(set) {
+  if (!set) return null;
+  return set.recommended_price ?? set.private_sale_value ?? set.ebay_listing_price ?? null;
+}
+
 function setImageUrl(set) {
   if (set.image_url) return set.image_url;
   return `https://images.brickset.com/sets/images/${set.set_number}-1.jpg`;
@@ -95,7 +100,7 @@ function sortSets(sets) {
       bv = b.listing_status === "sold" ? (b.sold_price ?? 0) : -1;
       return (av - bv) * dir;
     }
-    if (["bl_used_avg", "bl_sealed_avg", "ebay_sold_avg", "private_sale_value", "ebay_listing_price", "listed_price", "sold_price", "quantity_held", "quantity_listed", "uk_rrp"].includes(sortColumn)) {
+    if (["bl_used_avg", "bl_sealed_avg", "ebay_sold_avg", "recommended_price", "listed_price", "sold_price", "quantity_held", "quantity_listed", "uk_rrp"].includes(sortColumn)) {
       av = av ?? -1;
       bv = bv ?? -1;
       return (av - bv) * dir;
@@ -214,8 +219,7 @@ function renderSetCards(sets, { showSoldCol, showListedCol }) {
       <p class="set-card-condition">${esc(s.condition)} · ${qty}</p>
       <div class="set-card-status">${statusSelect(s.id, s.listing_status)}</div>
       <div class="set-card-prices">
-        <div><span class="set-card-price-label">Private</span><strong>${fmtWhole(s.private_sale_value)}</strong></div>
-        <div><span class="set-card-price-label">eBay list</span><strong>${fmtWhole(s.ebay_listing_price)}</strong></div>
+        <div><span class="set-card-price-label">List at</span><strong>${fmtWhole(recommendedPrice(s))}</strong></div>
         ${listedCell}
         ${soldCell}
       </div>
@@ -263,8 +267,7 @@ function renderSets(sets) {
       <td class="num hide-mobile">${fmt(s.bl_used_avg)}</td>
       <td class="num hide-mobile">${fmt(s.bl_sealed_avg)}</td>
       <td class="num hide-mobile">${fmt(s.ebay_sold_avg)}</td>
-      <td class="num col-price">${fmtWhole(s.private_sale_value)}</td>
-      <td class="num hide-mobile">${fmtWhole(s.ebay_listing_price)}</td>
+      <td class="num col-price">${fmtWhole(recommendedPrice(s))}</td>
       <td class="num listed-col hide-mobile${s.listing_status === "for_sale" ? " listed-price-edit" : ""}${showListedCol ? "" : " hidden"}" data-edit-listed="${s.listing_status === "for_sale" ? s.id : ""}" title="${s.listing_status === "for_sale" ? "Click to edit listed price" : ""}">${s.listing_status === "for_sale" ? fmtWhole(s.listed_price) : "—"}</td>
       <td class="num sold-col${showSoldCol ? " sold-price-edit" : " hidden"}" data-edit-sold="${s.id}" title="Click to edit sold price">${fmt(s.sold_price)}</td>
       <td class="hide-mobile rating-${s.investment_rating || "Average"}">${s.investment_rating || "—"}</td>
@@ -343,8 +346,7 @@ function openHistoryModal(id) {
         <td class="num">${fmt(h.bl_used_avg)}</td>
         <td class="num">${fmt(h.bl_sealed_avg)}</td>
         <td class="num">${fmt(h.ebay_sold_avg)}</td>
-        <td class="num">${fmtWhole(h.private_sale_value)}</td>
-        <td class="num">${fmtWhole(h.ebay_listing_price)}</td>
+        <td class="num">${fmtWhole(h.recommended_price ?? h.private_sale_value)}</td>
       </tr>`
           )
           .join("");
@@ -454,7 +456,7 @@ function updateDetailStatusFields(status, set = detailCurrentSet) {
   if (status === "for_sale") {
     if (!$("#detail-listed-price-input").value && set) {
       $("#detail-listed-price-input").value =
-        set.listed_price ?? set.private_sale_value ?? set.ebay_listing_price ?? "";
+        set.listed_price ?? recommendedPrice(set) ?? "";
     }
     if (!$("#detail-listed-date-input").value) {
       $("#detail-listed-date-input").value =
@@ -464,7 +466,7 @@ function updateDetailStatusFields(status, set = detailCurrentSet) {
   if (status === "sold") {
     if (!$("#detail-sold-price-input").value && set) {
       $("#detail-sold-price-input").value =
-        set.sold_price ?? set.listed_price ?? set.private_sale_value ?? "";
+        set.sold_price ?? set.listed_price ?? recommendedPrice(set) ?? "";
     }
     if (!$("#detail-sold-date-input").value) {
       $("#detail-sold-date-input").value =
@@ -632,8 +634,7 @@ async function openSetDetailAsync(id) {
     .filter(Boolean)
     .join(" · ");
 
-  $("#detail-private").textContent = fmtWhole(set.private_sale_value);
-  $("#detail-ebay").textContent = fmtWhole(set.ebay_listing_price);
+  $("#detail-recommended").textContent = fmtWhole(recommendedPrice(set));
 
   const isBnib = (set.condition || "").toLowerCase().includes("bnib");
   const stockAvg = isBnib ? set.bl_sealed_stock_avg : set.bl_used_stock_avg;
@@ -709,10 +710,7 @@ $("#detail-status").addEventListener("change", (e) => {
   const status = e.target.value;
   if (status === "for_sale" && !$("#detail-listed-price-input").value) {
     $("#detail-listed-price-input").value =
-      detailCurrentSet?.listed_price ??
-      detailCurrentSet?.private_sale_value ??
-      detailCurrentSet?.ebay_listing_price ??
-      "";
+      detailCurrentSet?.listed_price ?? recommendedPrice(detailCurrentSet) ?? "";
   }
   if (status === "for_sale" && (!$("#detail-quantity-listed").value || $("#detail-quantity-listed").value === "0")) {
     const held = parseInt($("#detail-quantity-held").value, 10) || detailCurrentSet?.quantity_held || 1;
@@ -725,7 +723,7 @@ $("#detail-status").addEventListener("change", (e) => {
     $("#detail-sold-price-input").value =
       detailCurrentSet?.sold_price ??
       detailCurrentSet?.listed_price ??
-      detailCurrentSet?.private_sale_value ??
+      recommendedPrice(detailCurrentSet) ??
       "";
   }
   updateDetailStatusFields(status);
@@ -860,18 +858,16 @@ async function openForSaleModalAsync(id, label, edit = false) {
   $("#for-sale-submit-btn").textContent = edit ? "Save changes" : "Confirm listing";
   $("#for-sale-set-label").textContent = label;
 
-  const hint = [];
-  if (set?.private_sale_value != null) hint.push(`Private: ${fmtWhole(set.private_sale_value)}`);
-  if (set?.ebay_listing_price != null) hint.push(`eBay: ${fmtWhole(set.ebay_listing_price)}`);
-  $("#for-sale-hint").textContent = hint.length ? `Recommended — ${hint.join(" · ")}` : "";
+  const rec = recommendedPrice(set);
+  $("#for-sale-hint").textContent =
+    rec != null ? `Recommended listing price: ${fmtWhole(rec)}` : "";
 
   if (edit) {
     $("#listed-price").value = set?.listed_price != null ? set.listed_price : "";
     $("#listed-date").value = set?.listed_date || new Date().toISOString().slice(0, 10);
     $("#listed-quantity").value = set?.quantity_listed ?? set?.quantity_held ?? 1;
   } else {
-    $("#listed-price").value =
-      set?.private_sale_value != null ? set.private_sale_value : set?.ebay_listing_price ?? "";
+    $("#listed-price").value = recommendedPrice(set) ?? "";
     $("#listed-date").value = new Date().toISOString().slice(0, 10);
     $("#listed-quantity").value = set?.quantity_held ?? 1;
   }
@@ -923,7 +919,7 @@ async function openSoldModalAsync(id, label, edit = false) {
     $("#sold-price").value = set?.sold_price != null ? set.sold_price : "";
     $("#sold-date").value = set?.sold_date || new Date().toISOString().slice(0, 10);
   } else {
-    $("#sold-price").value = set?.private_sale_value != null ? set.private_sale_value : "";
+    $("#sold-price").value = recommendedPrice(set) ?? "";
     $("#sold-date").value = new Date().toISOString().slice(0, 10);
   }
 

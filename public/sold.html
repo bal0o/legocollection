@@ -10,7 +10,7 @@
   <header class="header">
     <div class="header-inner">
       <h1>Sold History</h1>
-      <p class="subtitle">Actual sale price vs recommended values</p>
+      <p class="subtitle">Actual sale price vs recommended listing price</p>
     </div>
     <nav class="header-nav">
       <a href="/" class="nav-link">Collection</a>
@@ -31,15 +31,15 @@
       <span class="stat-value" id="stat-revenue">—</span>
     </div>
     <div class="stat-card">
-      <span class="stat-label">Recommended (private)</span>
+      <span class="stat-label">Recommended total</span>
       <span class="stat-value" id="stat-recommended">—</span>
     </div>
     <div class="stat-card">
-      <span class="stat-label">Avg vs private</span>
+      <span class="stat-label">Avg vs recommended</span>
       <span class="stat-value" id="stat-avg-pct">—</span>
     </div>
     <div class="stat-card">
-      <span class="stat-label">Total vs private</span>
+      <span class="stat-label">Total vs recommended</span>
       <span class="stat-value" id="stat-total-pct">—</span>
     </div>
   </section>
@@ -58,10 +58,8 @@
           <th class="hide-mobile"><button type="button" class="sort-btn" data-sort="condition">Condition</button></th>
           <th class="num hide-mobile"><button type="button" class="sort-btn" data-sort="uk_rrp">RRP</button></th>
           <th class="num"><button type="button" class="sort-btn" data-sort="sold_price">Sold</button></th>
-          <th class="num hide-mobile"><button type="button" class="sort-btn" data-sort="rec_private">Private</button></th>
-          <th class="num"><button type="button" class="sort-btn" data-sort="vs_private_pct">± Private</button></th>
-          <th class="num hide-mobile"><button type="button" class="sort-btn" data-sort="rec_ebay">eBay list</button></th>
-          <th class="num hide-mobile"><button type="button" class="sort-btn" data-sort="vs_ebay_pct">± eBay</button></th>
+          <th class="num hide-mobile"><button type="button" class="sort-btn" data-sort="recommended_price">List at</button></th>
+          <th class="num"><button type="button" class="sort-btn" data-sort="vs_recommended_pct">± Recommended</button></th>
         </tr>
       </thead>
       <tbody id="sold-body"></tbody>

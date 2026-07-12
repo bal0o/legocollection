@@ -4,6 +4,15 @@ function round(n) {
   return Math.round(n * 100) / 100;
 }
 
+function resolveRecommendedPrice(set) {
+  if (!set) return null;
+  if (set.recommended_price != null) return set.recommended_price;
+  const p = set.private_sale_value;
+  const e = set.ebay_listing_price;
+  if (p != null && e != null) return Math.max(p, e);
+  return p ?? e ?? null;
+}
+
 function pickStockGuide(data, condition) {
   const cond = (condition || data.condition || "").toLowerCase();
   if (cond.includes("bnib")) {
@@ -18,6 +27,26 @@ function pickStockGuide(data, condition) {
   };
 }
 
+function median(nums) {
+  const sorted = nums.filter((n) => n > 0).sort((a, b) => a - b);
+  if (!sorted.length) return null;
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : round((sorted[mid - 1] + sorted[mid]) / 2);
+}
+
+function soldSignal(data, condition) {
+  const cond = (condition || data.condition || "").toLowerCase();
+  const bl = cond.includes("bnib") ? data.bl_sealed_avg : data.bl_used_avg;
+  const ebay = data.ebay_sold_avg ?? data.ebay_sold_median;
+  if (bl && ebay) return round(bl * 0.55 + ebay * 0.45);
+  return bl || ebay || null;
+}
+
+function askSignal(data, condition) {
+  const stock = pickStockGuide(data, condition);
+  return median([stock.avg, stock.min, data.ebay_ask_median, data.ebay_ask_min].filter(Boolean));
+}
+
 function competitiveAskFloor(data, condition) {
   const stock = pickStockGuide(data, condition);
   const floors = [];
@@ -30,107 +59,57 @@ function competitiveAskFloor(data, condition) {
   return floors.length ? Math.max(...floors) : null;
 }
 
-function applyCompetitiveFloor(price, floor, { cap } = {}) {
+function applyCompetitiveFloor(price, floor) {
   if (price == null || Number.isNaN(price)) return floor ?? null;
   if (!floor) return price;
-  let next = Math.max(price, floor);
-  if (cap != null && cap > 0) next = Math.min(next, cap);
-  return next;
-}
-
-function pickMarketValue(data, condition) {
-  const cond = (condition || data.condition || "").toLowerCase();
-  const ebay = data.ebay_sold_avg ?? data.ebay_sold_median;
-  const blUsed = data.bl_used_avg;
-  const blSealed = data.bl_sealed_avg;
-  const stock = pickStockGuide(data, condition);
-  const retail = data.uk_retail_price ?? data.uk_rrp ?? 0;
-  const atRetail =
-    (data.retirement_status || "").includes("Retail") ||
-    (data.retirement_status || "").includes("Exclusive");
-
-  if (cond.includes("bnib")) {
-    return blSealed || stock.avg || ebay || retail || blUsed;
-  }
-  if (cond.includes("bagged")) {
-    return blUsed || stock.avg || ebay || blSealed;
-  }
-  if (cond.includes("missing")) {
-    return (blUsed || stock.min || ebay) * 0.85;
-  }
-  return blUsed || stock.avg || ebay || blSealed;
+  return Math.max(price, floor);
 }
 
 function suggestListingPrices(data, condition) {
-  const market = pickMarketValue(data, condition);
-  if (!market || market <= 0) {
+  const cond = (condition || data.condition || "").toLowerCase();
+  const sold = soldSignal(data, condition);
+  const asks = askSignal(data, condition);
+  const floor = competitiveAskFloor(data, condition);
+
+  if (!sold && !asks && !floor) {
     return {
-      ebay_listing_price: null,
+      recommended_price: null,
       private_sale_value: null,
-      quick_sale_price: null,
+      ebay_listing_price: null,
       competitive_floor: null,
     };
   }
 
-  const cond = (condition || data.condition || "").toLowerCase();
-  const ebaySold = data.ebay_sold_avg ?? data.ebay_sold_median;
-  const blUsed = data.bl_used_avg ?? 0;
-  const blSealed = data.bl_sealed_avg ?? 0;
-  const retail = data.uk_retail_price ?? data.uk_rrp ?? 0;
-  const atRetail =
-    (data.retirement_status || "").includes("Retail") ||
-    (data.retirement_status || "").includes("Exclusive");
-  const floor = competitiveAskFloor(data, condition);
-  const stock = pickStockGuide(data, condition);
-  const retailCap = atRetail && retail > 0 ? round(retail * 0.92) : null;
+  let price;
 
-  let privateSale;
-  let quickSale;
-
-  if (cond.includes("bnib")) {
-    if (atRetail && retail > 0) {
-      privateSale = round(retail * 0.92);
-      quickSale = round(retail * 0.87);
-    } else {
-      privateSale = round((blSealed || ebaySold || market) * 0.95);
-      quickSale = round((blSealed || ebaySold || market) * 0.88);
-    }
-  } else if (cond.includes("bagged")) {
-    privateSale = round((blUsed || ebaySold || market) * 1.05);
-    quickSale = round((blUsed || ebaySold || market) * 0.92);
-    if (blSealed > 0) privateSale = Math.min(privateSale, round(blSealed * 0.88));
-  } else if (cond.includes("missing")) {
-    privateSale = round((blUsed || ebaySold || market) * 0.82);
-    quickSale = round((blUsed || ebaySold || market) * 0.72);
+  if (sold && asks) {
+    const spread = asks / sold;
+    const askWeight = spread > 1.12 ? 0.62 : 0.52;
+    price = round(sold * (1 - askWeight) + asks * askWeight);
   } else {
-    privateSale = round((blUsed || ebaySold || market) * 0.98);
-    quickSale = round((blUsed || ebaySold || market) * 0.85);
+    price = asks || sold;
   }
 
-  privateSale = applyCompetitiveFloor(privateSale, floor, { cap: retailCap });
-  quickSale = applyCompetitiveFloor(quickSale, floor ? round(floor * 0.9) : null, {
-    cap: retailCap,
-  });
-
-  const ebayAnchor = ebaySold || blUsed || blSealed || market;
-  let ebayListing = round(Math.max(ebayAnchor * 1.12, privateSale * 1.08));
-  const ebayFloor = floor ? round(floor * 1.05) : null;
-  if (ebayFloor) ebayListing = Math.max(ebayListing, ebayFloor);
-  if (data.ebay_ask_median > 0) {
-    ebayListing = Math.max(ebayListing, round(data.ebay_ask_median * 0.95));
-  } else if (stock.avg > 0) {
-    ebayListing = Math.max(ebayListing, round(stock.avg * 0.95));
+  if (cond.includes("missing")) {
+    price = round((price || sold || asks) * 0.88);
+  } else if (cond.includes("bagged") && data.bl_sealed_avg > 0 && price) {
+    price = Math.min(price, round(data.bl_sealed_avg * 0.9));
   }
+
+  price = applyCompetitiveFloor(price, floor);
+
+  const recommended = price != null && price > 0 ? roundListing(price) : null;
 
   return {
-    private_sale_value: roundListing(privateSale),
-    quick_sale_price: roundListing(quickSale),
-    ebay_listing_price: roundListing(ebayListing),
+    recommended_price: recommended,
+    private_sale_value: recommended,
+    ebay_listing_price: recommended,
     competitive_floor: floor,
   };
 }
 
 function buildPriceSnapshot(data) {
+  const recommended = data.recommended_price ?? resolveRecommendedPrice(data);
   return {
     date: new Date().toISOString(),
     bl_used_avg: data.bl_used_avg ?? null,
@@ -142,8 +121,9 @@ function buildPriceSnapshot(data) {
     ebay_sold_count: data.ebay_sold_count ?? 0,
     ebay_ask_min: data.ebay_ask_min ?? null,
     ebay_ask_median: data.ebay_ask_median ?? null,
-    private_sale_value: data.private_sale_value ?? null,
-    ebay_listing_price: data.ebay_listing_price ?? null,
+    recommended_price: recommended,
+    private_sale_value: recommended,
+    ebay_listing_price: recommended,
     competitive_floor: data.competitive_floor ?? null,
   };
 }
@@ -164,4 +144,5 @@ module.exports = {
   buildPriceSnapshot,
   appendPriceHistory,
   competitiveAskFloor,
+  resolveRecommendedPrice,
 };

@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const { resolveRecommendedPrice } = require("../services/marketplaces");
 
 const DATA_DIR = path.join(__dirname, "..", "data");
 const DB_PATH = path.join(DATA_DIR, "collection.json");
@@ -49,6 +50,16 @@ function sanitizeMissingPieces(input) {
     });
 }
 
+function normalizeRecommendedPrice(set) {
+  const resolved = resolveRecommendedPrice(set);
+  if (resolved != null) {
+    set.recommended_price = resolved;
+    set.private_sale_value = resolved;
+    set.ebay_listing_price = resolved;
+  }
+  return set;
+}
+
 function migrateSet(set) {
   if (set.listing_status && STATUSES.includes(set.listing_status)) {
     if (!Array.isArray(set.price_history)) set.price_history = [];
@@ -56,6 +67,7 @@ function migrateSet(set) {
       set.sold_snapshot = buildSoldSnapshot(set);
     }
     normalizeMissingPieces(set);
+    normalizeRecommendedPrice(set);
     return normalizeQuantities(set);
   }
   if (set.sold === 1 || set.sold === true) {
@@ -66,6 +78,7 @@ function migrateSet(set) {
   delete set.sold;
   if (!Array.isArray(set.price_history)) set.price_history = [];
   normalizeMissingPieces(set);
+  normalizeRecommendedPrice(set);
   return normalizeQuantities(set);
 }
 
@@ -105,9 +118,11 @@ function matchSearch(set, term) {
 }
 
 function buildSoldSnapshot(set) {
+  const recommended = resolveRecommendedPrice(set);
   return {
-    private_sale_value: set.private_sale_value ?? null,
-    ebay_listing_price: set.ebay_listing_price ?? null,
+    recommended_price: recommended,
+    private_sale_value: recommended,
+    ebay_listing_price: recommended,
     bl_used_avg: set.bl_used_avg ?? null,
     ebay_sold_avg: set.ebay_sold_avg ?? null,
     captured_at: new Date().toISOString(),
@@ -231,8 +246,8 @@ module.exports = {
     const byStatus = (st) => sets.filter((s) => s.listing_status === st);
     const qty = (s) => Math.max(1, s.quantity_held ?? 1);
     const qtyListed = (s) => Math.max(0, s.quantity_listed ?? 0);
-    const sumPrivateQty = (list) =>
-      list.reduce((sum, s) => sum + (s.private_sale_value || 0) * qty(s), 0);
+    const sumRecommendedQty = (list) =>
+      list.reduce((sum, s) => sum + (resolveRecommendedPrice(s) || 0) * qty(s), 0);
     const held = [...byStatus("collection"), ...byStatus("for_sale")];
 
     return {
@@ -243,12 +258,12 @@ module.exports = {
       pieces_in_collection: byStatus("collection").reduce((sum, s) => sum + qty(s), 0),
       pieces_held: held.reduce((sum, s) => sum + qty(s), 0),
       pieces_listed: byStatus("for_sale").reduce((sum, s) => sum + qtyListed(s), 0),
-      collection_value: sumPrivateQty(byStatus("collection")),
+      collection_value: sumRecommendedQty(byStatus("collection")),
       for_sale_value: byStatus("for_sale").reduce(
-        (sum, s) => sum + (s.listed_price ?? s.private_sale_value ?? 0) * qtyListed(s),
+        (sum, s) => sum + (s.listed_price ?? resolveRecommendedPrice(s) ?? 0) * qtyListed(s),
         0
       ),
-      held_value: sumPrivateQty(held),
+      held_value: sumRecommendedQty(held),
       sold_value: byStatus("sold").reduce((sum, s) => sum + (s.sold_price || 0), 0),
       total_rrp: sets.reduce((sum, s) => sum + (s.uk_rrp || 0) * qty(s), 0),
     };
@@ -258,12 +273,9 @@ module.exports = {
     const items = sold
       .filter((s) => s.sold_price != null)
       .map((set) => {
-        const recommended = set.sold_snapshot || {
-          private_sale_value: set.private_sale_value ?? null,
-          ebay_listing_price: set.ebay_listing_price ?? null,
-          bl_used_avg: set.bl_used_avg ?? null,
-          ebay_sold_avg: set.ebay_sold_avg ?? null,
-        };
+        const recommendedPrice =
+          set.sold_snapshot?.recommended_price ??
+          resolveRecommendedPrice(set.sold_snapshot || set);
         const soldPrice = set.sold_price;
         return {
           id: set.id,
@@ -273,32 +285,26 @@ module.exports = {
           sold_date: set.sold_date,
           sold_price: soldPrice,
           uk_rrp: set.uk_rrp ?? null,
-          recommended,
-          vs_private_pct: pctDiff(soldPrice, recommended.private_sale_value),
-          vs_ebay_pct: pctDiff(soldPrice, recommended.ebay_listing_price),
+          recommended_price: recommendedPrice,
+          vs_recommended_pct: pctDiff(soldPrice, recommendedPrice),
         };
       });
 
     items.sort((a, b) => String(b.sold_date || "").localeCompare(String(a.sold_date || "")));
 
     const totalSold = items.reduce((sum, i) => sum + i.sold_price, 0);
-    const totalPrivate = items.reduce(
-      (sum, i) => sum + (i.recommended.private_sale_value || 0),
-      0
-    );
-    const pcts = items
-      .map((i) => i.vs_private_pct)
-      .filter((p) => p != null);
-    const avgVsPrivate =
+    const totalRecommended = items.reduce((sum, i) => sum + (i.recommended_price || 0), 0);
+    const pcts = items.map((i) => i.vs_recommended_pct).filter((p) => p != null);
+    const avgVsRecommended =
       pcts.length > 0 ? Math.round((pcts.reduce((s, p) => s + p, 0) / pcts.length) * 10) / 10 : null;
 
     return {
       summary: {
         count: items.length,
         total_sold: Math.round(totalSold * 100) / 100,
-        total_private_recommended: Math.round(totalPrivate * 100) / 100,
-        total_vs_private_pct: pctDiff(totalSold, totalPrivate),
-        avg_vs_private_pct: avgVsPrivate,
+        total_recommended: Math.round(totalRecommended * 100) / 100,
+        total_vs_recommended_pct: pctDiff(totalSold, totalRecommended),
+        avg_vs_recommended_pct: avgVsRecommended,
       },
       items,
     };
