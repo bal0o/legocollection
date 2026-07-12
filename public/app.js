@@ -207,6 +207,7 @@ function renderSetCards(sets, { showSoldCol, showListedCol }) {
         <div class="set-card-title">
           <strong>${s.set_number}</strong>
           <span class="name">${esc(s.description)}</span>
+          ${(s.missing_pieces?.length ?? 0) > 0 ? `<span class="missing-badge">${s.missing_pieces.length} missing</span>` : ""}
         </div>
         <span class="set-card-rating rating-${s.investment_rating || "Average"}">${s.investment_rating || "—"}</span>
       </div>
@@ -253,7 +254,7 @@ function renderSets(sets) {
       (s) => `
     <tr class="row-${s.listing_status} row-clickable" data-id="${s.id}">
       <td class="col-set"><strong>${s.set_number}</strong></td>
-      <td class="name">${esc(s.description)}</td>
+      <td class="name">${esc(s.description)}${(s.missing_pieces?.length ?? 0) > 0 ? ` <span class="missing-badge" title="${s.missing_pieces.length} missing piece(s)">${s.missing_pieces.length} missing</span>` : ""}</td>
       <td class="hide-mobile">${esc(s.condition)}</td>
       <td class="col-status">${statusSelect(s.id, s.listing_status)}</td>
       <td class="num hide-mobile">${s.quantity_held ?? 1}</td>
@@ -472,8 +473,120 @@ function updateDetailStatusFields(status, set = detailCurrentSet) {
   }
 }
 
+function isMissingCondition(condition) {
+  return (condition || "").toLowerCase().includes("missing");
+}
+
+function storedMissingPieces(pieces = []) {
+  return (pieces || []).map((p) => ({
+    piece_number: p.piece_number,
+    bag: p.bag || "",
+  }));
+}
+
+function updateMissingSectionVisibility(condition, pieces = []) {
+  const show = isMissingCondition(condition) || (pieces && pieces.length > 0);
+  $("#detail-missing-section").classList.toggle("hidden", !show);
+}
+
+function renderMissingPiecesList(pieces) {
+  const list = $("#detail-missing-list");
+  if (!pieces || pieces.length === 0) {
+    list.innerHTML = '<li class="missing-empty">No missing pieces recorded yet.</li>';
+    return;
+  }
+
+  list.innerHTML = pieces
+    .map(
+      (piece, index) => `
+    <li class="missing-piece-item">
+      <div class="missing-piece-thumb">
+        ${
+          piece.image_url
+            ? `<img src="${esc(piece.image_url)}" alt="" loading="lazy" />`
+            : '<span class="missing-piece-no-img">?</span>'
+        }
+      </div>
+      <div class="missing-piece-info">
+        <strong>${esc(piece.piece_number)}</strong>
+        <span>${esc(piece.name || piece.lookup_error || "Unknown part")}</span>
+        ${piece.bag ? `<span class="missing-piece-bag">Bag ${esc(piece.bag)}</span>` : ""}
+      </div>
+      <button type="button" class="btn btn-sm btn-ghost missing-btn-remove" data-index="${index}" title="Remove" aria-label="Remove">×</button>
+    </li>`
+    )
+    .join("");
+
+  list.querySelectorAll(".missing-btn-remove").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      removeMissingPiece(parseInt(btn.dataset.index, 10));
+    });
+  });
+}
+
+async function saveMissingPieces(pieces) {
+  if (!detailTargetId) return;
+  const payload = storedMissingPieces(pieces);
+  await api(`/api/sets/${detailTargetId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ missing_pieces: payload }),
+  });
+  if (detailCurrentSet) {
+    detailCurrentSet.missing_pieces = payload;
+  }
+}
+
+async function removeMissingPiece(index) {
+  if (!detailCurrentSet) return;
+  const pieces = storedMissingPieces(detailCurrentSet.missing_pieces);
+  pieces.splice(index, 1);
+  try {
+    await saveMissingPieces(pieces);
+    toast("Missing piece removed");
+    await openSetDetailAsync(detailTargetId);
+    await refresh();
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+let missingPreviewTimer = null;
+
+async function previewMissingPiece() {
+  const partNum = $("#missing-piece-number").value.trim();
+  const preview = $("#missing-piece-preview");
+  if (!partNum) {
+    preview.classList.add("hidden");
+    preview.innerHTML = "";
+    return;
+  }
+
+  preview.classList.remove("hidden");
+  preview.innerHTML = '<span class="missing-preview-loading">Looking up part…</span>';
+
+  try {
+    const part = await api(`/api/parts/${encodeURIComponent(partNum)}`);
+    if (part.error && !part.name) {
+      preview.innerHTML = `<span class="missing-preview-error">${esc(part.error)}</span>`;
+      return;
+    }
+    preview.innerHTML = `
+      <div class="missing-preview-card">
+        ${part.image_url ? `<img src="${esc(part.image_url)}" alt="" />` : ""}
+        <div>
+          <strong>${esc(part.piece_number)}</strong>
+          <span>${esc(part.name || "Unknown part")}</span>
+        </div>
+      </div>`;
+  } catch (err) {
+    preview.innerHTML = `<span class="missing-preview-error">${esc(err.message)}</span>`;
+  }
+}
+
 function populateDetailManageForm(set) {
   detailCurrentSet = set;
+  $("#detail-condition").value = set.condition || "Complete, dismantled";
   $("#detail-status").value = set.listing_status || "collection";
   $("#detail-quantity-held").value = set.quantity_held ?? 1;
   $("#detail-quantity-listed").value = set.quantity_listed ?? 0;
@@ -484,6 +597,12 @@ function populateDetailManageForm(set) {
   $("#detail-sold-date-input").value =
     set.sold_date || new Date().toISOString().slice(0, 10);
   updateDetailStatusFields(set.listing_status, set);
+  updateMissingSectionVisibility(set.condition, set.missing_pieces);
+  renderMissingPiecesList(set.missing_pieces || []);
+  $("#missing-piece-number").value = "";
+  $("#missing-piece-bag").value = "";
+  $("#missing-piece-preview").classList.add("hidden");
+  $("#missing-piece-preview").innerHTML = "";
 }
 
 async function openSetDetailAsync(id) {
@@ -532,6 +651,53 @@ async function openSetDetailAsync(id) {
   $("#modal-detail").showModal();
 }
 
+$("#detail-condition").addEventListener("change", (e) => {
+  updateMissingSectionVisibility(e.target.value, detailCurrentSet?.missing_pieces || []);
+});
+
+$("#missing-piece-number").addEventListener("input", () => {
+  clearTimeout(missingPreviewTimer);
+  missingPreviewTimer = setTimeout(() => previewMissingPiece(), 350);
+});
+
+$("#missing-btn-add").addEventListener("click", async () => {
+  if (!detailTargetId) return;
+  const piece_number = $("#missing-piece-number").value.trim();
+  const bag = $("#missing-piece-bag").value.trim();
+  if (!piece_number) {
+    toast("Enter a part number", "error");
+    return;
+  }
+
+  const pieces = storedMissingPieces(detailCurrentSet?.missing_pieces || []);
+  if (pieces.some((p) => p.piece_number === piece_number && p.bag === bag)) {
+    toast("That part is already listed for this bag", "error");
+    return;
+  }
+  pieces.push({ piece_number, bag });
+
+  const btn = $("#missing-btn-add");
+  btn.disabled = true;
+  btn.textContent = "Adding…";
+  try {
+    await saveMissingPieces(pieces);
+    if (!isMissingCondition($("#detail-condition").value)) {
+      await api(`/api/sets/${detailTargetId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ condition: "Missing piece" }),
+      });
+    }
+    toast("Missing piece added");
+    await openSetDetailAsync(detailTargetId);
+    await refresh();
+  } catch (err) {
+    toast(err.message, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Add";
+  }
+});
+
 $("#detail-status").addEventListener("change", (e) => {
   const status = e.target.value;
   if (status === "for_sale" && !$("#detail-listed-price-input").value) {
@@ -578,7 +744,7 @@ $("#detail-btn-save-status").addEventListener("click", async () => {
     return;
   }
 
-  const body = { listing_status: status, quantity_held, quantity_listed };
+  const body = { listing_status: status, quantity_held, quantity_listed, condition: $("#detail-condition").value };
 
   if (status === "for_sale") {
     if (quantity_listed < 1) {

@@ -23,12 +23,39 @@ function normalizeQuantities(set) {
   return set;
 }
 
+function normalizeMissingPieces(set) {
+  if (!Array.isArray(set.missing_pieces)) {
+    set.missing_pieces = [];
+  } else {
+    set.missing_pieces = sanitizeMissingPieces(set.missing_pieces);
+  }
+  return set;
+}
+
+function sanitizeMissingPieces(input) {
+  if (!Array.isArray(input)) return [];
+  const seen = new Set();
+  return input
+    .map((p) => ({
+      piece_number: String(p.piece_number || "").trim(),
+      bag: String(p.bag || "").trim(),
+    }))
+    .filter((p) => {
+      if (!p.piece_number) return false;
+      const key = `${p.piece_number}|${p.bag}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
 function migrateSet(set) {
   if (set.listing_status && STATUSES.includes(set.listing_status)) {
     if (!Array.isArray(set.price_history)) set.price_history = [];
     if (set.listing_status === "sold" && set.sold_price != null && !set.sold_snapshot) {
       set.sold_snapshot = buildSoldSnapshot(set);
     }
+    normalizeMissingPieces(set);
     return normalizeQuantities(set);
   }
   if (set.sold === 1 || set.sold === true) {
@@ -38,6 +65,7 @@ function migrateSet(set) {
   }
   delete set.sold;
   if (!Array.isArray(set.price_history)) set.price_history = [];
+  normalizeMissingPieces(set);
   return normalizeQuantities(set);
 }
 
@@ -123,6 +151,7 @@ function applyStatusChange(set, status, extras = {}) {
 module.exports = {
   DB_PATH,
   STATUSES,
+  sanitizeMissingPieces,
   getSets({ status = "held", search = "" } = {}) {
     const data = load();
     let sets = data.sets.filter((s) => matchSearch(s, search.trim()));
@@ -161,6 +190,7 @@ module.exports = {
       listed_date: null,
       quantity_held: 1,
       quantity_listed: 0,
+      missing_pieces: [],
       price_history: [],
       created_at: now,
       updated_at: now,
@@ -181,8 +211,12 @@ module.exports = {
       applyStatusChange(data.sets[idx], patch.listing_status, patch);
     }
 
-    const { listing_status, ...rest } = patch;
+    const { listing_status, missing_pieces, ...rest } = patch;
+    if (missing_pieces !== undefined) {
+      rest.missing_pieces = sanitizeMissingPieces(missing_pieces);
+    }
     Object.assign(data.sets[idx], rest, { updated_at: new Date().toISOString() });
+    normalizeMissingPieces(data.sets[idx]);
     normalizeQuantities(data.sets[idx]);
     save(data);
     return rowToSet(data.sets[idx]);

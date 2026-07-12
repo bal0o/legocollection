@@ -218,6 +218,15 @@
         <div class="detail-manage">
           <h3 class="detail-manage-title">Status &amp; pricing</h3>
           <label class="detail-field">
+            Condition
+            <select id="detail-condition" class="detail-input">
+              <option>BNIB</option>
+              <option>Complete, bagged</option>
+              <option>Complete, dismantled</option>
+              <option>Missing piece</option>
+            </select>
+          </label>
+          <label class="detail-field">
             Status
             <select id="detail-status" class="detail-input">
               <option value="collection">In collection</option>
@@ -256,6 +265,24 @@
             </label>
           </div>
           <button type="button" id="detail-btn-save-status" class="btn btn-primary btn-sm">Save status &amp; pricing</button>
+        </div>
+
+        <div id="detail-missing-section" class="detail-missing hidden">
+          <h3 class="detail-manage-title">Missing pieces</h3>
+          <p class="form-hint">Enter the part number and which instruction bag it belongs in. Names and images load from Rebrickable.</p>
+          <ul id="detail-missing-list" class="missing-pieces-list"></ul>
+          <div class="missing-add-form">
+            <label class="detail-field missing-field-piece">
+              Part number
+              <input type="text" id="missing-piece-number" class="detail-input" placeholder="e.g. 3001" autocomplete="off" />
+            </label>
+            <label class="detail-field missing-field-bag">
+              Bag
+              <input type="text" id="missing-piece-bag" class="detail-input" placeholder="e.g. 3" inputmode="numeric" />
+            </label>
+            <button type="button" id="missing-btn-add" class="btn btn-secondary btn-sm">Add</button>
+          </div>
+          <div id="missing-piece-preview" class="missing-piece-preview hidden"></div>
         </div>
       </div>
     </div>

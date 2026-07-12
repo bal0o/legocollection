@@ -5,6 +5,7 @@ const path = require("path");
 const store = require("./db/database");
 const { searchSets, fetchPricing, lookupSetMetadata, normalizeSetNumber } = require("./services/pricing");
 const { generateListingText } = require("./services/listing");
+const { lookupPart, enrichMissingPieces } = require("./services/parts");
 const { refreshAllSets, isRefreshInProgress } = require("./services/refresh-all");
 const { startDailyRefreshScheduler } = require("./services/scheduler");
 const { importCsv } = require("./scripts/import-csv");
@@ -41,11 +42,28 @@ app.get("/api/sets", (req, res) => {
   res.json(store.getSets({ status: String(mapped), search: String(search) }));
 });
 
-app.get("/api/sets/:id", (req, res) => {
-  const set = store.getSet(Number(req.params.id));
-  if (!set) return res.status(404).json({ error: "Set not found" });
-  set.listing_text = generateListingText(set);
-  res.json(set);
+app.get("/api/sets/:id", async (req, res) => {
+  try {
+    const set = store.getSet(Number(req.params.id));
+    if (!set) return res.status(404).json({ error: "Set not found" });
+
+    if (set.missing_pieces?.length) {
+      set.missing_pieces = await enrichMissingPieces(set.missing_pieces);
+    }
+    set.listing_text = generateListingText(set);
+    res.json(set);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/parts/:partNum", async (req, res) => {
+  try {
+    const part = await lookupPart(req.params.partNum);
+    res.json(part);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post("/api/search", async (req, res) => {
@@ -176,6 +194,10 @@ app.patch("/api/sets/:id", (req, res) => {
 
   if (body.listing_status === "for_sale" && body.listed_price == null && set.listed_price == null) {
     return res.status(400).json({ error: "listed_price required when marking for sale" });
+  }
+
+  if (body.missing_pieces !== undefined) {
+    body.missing_pieces = store.sanitizeMissingPieces(body.missing_pieces);
   }
 
   const updated = store.updateSet(set.id, body);

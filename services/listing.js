@@ -3,23 +3,43 @@ function roundListing(n) {
   return Math.ceil(n / 5) * 5;
 }
 
-function conditionDetail(condition) {
+function conditionDetail(condition, missingPieces = []) {
   const c = (condition || "").toLowerCase();
+  if (c.includes("missing") || missingPieces.length > 0) {
+    if (missingPieces.length > 0) {
+      return `Missing ${missingPieces.length} piece${missingPieces.length === 1 ? "" : "s"} — see list below.`;
+    }
+    return "Mostly complete — missing pieces listed below.";
+  }
   if (c.includes("bnib")) return "Brand new, sealed in box (BNIB). Never opened.";
   if (c.includes("bagged")) return "Complete with all pieces, bagged by set. Instructions included.";
-  if (c.includes("missing")) return "Mostly complete — see description for any missing pieces.";
   return "Complete with all pieces and instructions. Dismantled and bagged.";
+}
+
+function formatMissingPieceLine(piece) {
+  const label = piece.name || piece.piece_number;
+  const bag = piece.bag ? ` (Bag ${piece.bag})` : "";
+  return `- Part ${piece.piece_number}: ${label}${bag}`;
 }
 
 function generateListingText(set) {
   const num = set.set_number;
   const name = set.description || `Set ${num}`;
+  const missing = Array.isArray(set.missing_pieces) ? set.missing_pieces : [];
   const lines = [
     `LEGO ${num} — ${name}`,
     "",
-    conditionDetail(set.condition),
+    conditionDetail(set.condition, missing),
     "",
   ];
+
+  if (missing.length > 0) {
+    lines.push("Missing pieces (not included):");
+    for (const piece of missing) {
+      lines.push(formatMissingPieceLine(piece));
+    }
+    lines.push("");
+  }
 
   if (set.release_year) lines.push(`Released: ${set.release_year}`);
   if (set.uk_rrp) lines.push(`Original RRP: £${Number(set.uk_rrp).toFixed(2)}`);
