@@ -20,17 +20,25 @@ function conditionDetail(condition, missingPieces = []) {
   if (c.includes("bagged")) return CONDITION_DESCRIPTIONS["Complete, bagged"];
   if (c.includes("missing") || missing.length > 0) {
     if (missing.length > 0) {
-      return `Incomplete — ${missing.length} missing piece${missing.length === 1 ? "" : "s"} (not included), listed below.`;
+      const count = missingPiecesCount(missing);
+      return `Incomplete — ${count} missing piece${count === 1 ? "" : "s"} (not included), listed below.`;
     }
     return "Incomplete set — missing pieces not included.";
   }
   return CONDITION_DESCRIPTIONS["Complete, dismantled"];
 }
 
+function missingPiecesCount(pieces = []) {
+  if (!Array.isArray(pieces) || pieces.length === 0) return 0;
+  return pieces.reduce((sum, piece) => sum + Math.max(1, parseInt(piece.quantity, 10) || 1), 0);
+}
+
 function formatMissingPieceLine(piece) {
   const label = piece.name || piece.piece_number;
+  const qty = Math.max(1, parseInt(piece.quantity, 10) || 1);
+  const qtyLabel = qty > 1 ? ` ×${qty}` : "";
   const bag = piece.bag ? ` (Bag ${piece.bag})` : "";
-  return `- Part ${piece.piece_number}: ${label}${bag}`;
+  return `- Part ${piece.piece_number}: ${label}${qtyLabel}${bag}`;
 }
 
 function generateListingText(set) {
@@ -81,4 +89,5 @@ module.exports = {
   setImageUrl,
   conditionDetail,
   CONDITION_DESCRIPTIONS,
+  missingPiecesCount,
 };

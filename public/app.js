@@ -219,7 +219,7 @@ function renderSetCards(sets, { showSoldCol, showListedCol }) {
         <div class="set-card-title">
           <strong>${s.set_number}</strong>
           <span class="name">${esc(s.description)}</span>
-          ${(s.missing_pieces?.length ?? 0) > 0 ? `<span class="missing-badge">${s.missing_pieces.length} missing</span>` : ""}
+          ${(s.missing_pieces?.length ?? 0) > 0 ? `<span class="missing-badge">${missingPiecesCount(s.missing_pieces)} missing</span>` : ""}
         </div>
       </div>
       <p class="set-card-condition">${esc(s.condition)} · ${qty}</p>
@@ -264,7 +264,7 @@ function renderSets(sets) {
       (s) => `
     <tr class="row-${s.listing_status} row-clickable" data-id="${s.id}">
       <td class="col-set"><strong>${s.set_number}</strong></td>
-      <td class="name">${esc(s.description)}${(s.missing_pieces?.length ?? 0) > 0 ? ` <span class="missing-badge" title="${s.missing_pieces.length} missing piece(s)">${s.missing_pieces.length} missing</span>` : ""}</td>
+      <td class="name">${esc(s.description)}${(s.missing_pieces?.length ?? 0) > 0 ? ` <span class="missing-badge" title="${missingPiecesCount(s.missing_pieces)} missing piece(s)">${missingPiecesCount(s.missing_pieces)} missing</span>` : ""}</td>
       <td class="hide-mobile">${esc(s.condition)}</td>
       <td class="col-status">${statusSelect(s.id, s.listing_status)}</td>
       <td class="num hide-mobile">${s.quantity_held ?? 1}</td>
@@ -538,10 +538,16 @@ function isMissingCondition(condition) {
   return (condition || "").toLowerCase().includes("missing");
 }
 
+function missingPiecesCount(pieces = []) {
+  if (!Array.isArray(pieces) || pieces.length === 0) return 0;
+  return pieces.reduce((sum, piece) => sum + Math.max(1, parseInt(piece.quantity, 10) || 1), 0);
+}
+
 function storedMissingPieces(pieces = []) {
   return (pieces || []).map((p) => ({
     piece_number: p.piece_number,
     bag: p.bag || "",
+    quantity: Math.max(1, parseInt(p.quantity, 10) || 1),
   }));
 }
 
@@ -571,6 +577,7 @@ function renderMissingPiecesList(pieces) {
       <div class="missing-piece-info">
         <strong>${esc(piece.piece_number)}</strong>
         <span>${esc(piece.name || piece.lookup_error || "Unknown part")}</span>
+        ${(piece.quantity ?? 1) > 1 ? `<span class="missing-piece-qty">×${piece.quantity}</span>` : ""}
         ${piece.bag ? `<span class="missing-piece-bag">Bag ${esc(piece.bag)}</span>` : ""}
       </div>
       <button type="button" class="btn btn-sm btn-ghost missing-btn-remove" data-index="${index}" title="Remove" aria-label="Remove">×</button>
@@ -638,6 +645,7 @@ async function previewMissingPiece() {
         <div>
           <strong>${esc(part.piece_number)}</strong>
           <span>${esc(part.name || "Unknown part")}</span>
+          ${part.bl_part_no && part.bl_part_no !== part.piece_number ? `<span class="missing-preview-meta">BL ${esc(part.bl_part_no)}</span>` : ""}
         </div>
       </div>`;
   } catch (err) {
@@ -663,6 +671,7 @@ function populateDetailManageForm(set) {
   renderMissingPiecesList(set.missing_pieces || []);
   $("#missing-piece-number").value = "";
   $("#missing-piece-bag").value = "";
+  $("#missing-piece-quantity").value = "1";
   $("#missing-piece-preview").classList.add("hidden");
   $("#missing-piece-preview").innerHTML = "";
 }
@@ -732,17 +741,19 @@ $("#missing-btn-add").addEventListener("click", async () => {
   if (!detailTargetId) return;
   const piece_number = $("#missing-piece-number").value.trim();
   const bag = $("#missing-piece-bag").value.trim();
+  const quantity = Math.max(1, parseInt($("#missing-piece-quantity").value, 10) || 1);
   if (!piece_number) {
     toast("Enter a part number", "error");
     return;
   }
 
   const pieces = storedMissingPieces(detailCurrentSet?.missing_pieces || []);
-  if (pieces.some((p) => p.piece_number === piece_number && p.bag === bag)) {
-    toast("That part is already listed for this bag", "error");
-    return;
+  const existing = pieces.find((p) => p.piece_number === piece_number && p.bag === bag);
+  if (existing) {
+    existing.quantity += quantity;
+  } else {
+    pieces.push({ piece_number, bag, quantity });
   }
-  pieces.push({ piece_number, bag });
 
   const btn = $("#missing-btn-add");
   btn.disabled = true;

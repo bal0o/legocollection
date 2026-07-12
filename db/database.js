@@ -40,6 +40,7 @@ function sanitizeMissingPieces(input) {
     .map((p) => ({
       piece_number: String(p.piece_number || "").trim(),
       bag: String(p.bag || "").trim(),
+      quantity: Math.max(1, parseInt(p.quantity, 10) || 1),
     }))
     .filter((p) => {
       if (!p.piece_number) return false;

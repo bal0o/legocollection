@@ -263,12 +263,16 @@
 
         <div id="detail-missing-section" class="detail-missing hidden">
           <h3 class="detail-manage-title">Missing pieces</h3>
-          <p class="form-hint">Record each missing part number and bag — they are added to the listing description automatically.</p>
+          <p class="form-hint">Enter a BrickLink element ID, part number, or paste a BrickLink search/catalog URL. Quantity and bag are included in the listing description.</p>
           <ul id="detail-missing-list" class="missing-pieces-list"></ul>
           <div class="missing-add-form">
             <label class="detail-field missing-field-piece">
-              Part number
-              <input type="text" id="missing-piece-number" class="detail-input" placeholder="e.g. 3001" autocomplete="off" />
+              Part / element ID
+              <input type="text" id="missing-piece-number" class="detail-input" placeholder="e.g. 306201 or BL URL" autocomplete="off" />
+            </label>
+            <label class="detail-field missing-field-qty">
+              Qty
+              <input type="number" id="missing-piece-quantity" class="detail-input" value="1" min="1" step="1" inputmode="numeric" />
             </label>
             <label class="detail-field missing-field-bag">
               Bag

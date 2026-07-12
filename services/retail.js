@@ -30,6 +30,71 @@ function isAtRetail(status) {
   return (status || "").includes("Retail");
 }
 
+const BRICKSET_MONTHS = {
+  jan: 0,
+  feb: 1,
+  mar: 2,
+  apr: 3,
+  may: 4,
+  jun: 5,
+  jul: 6,
+  aug: 7,
+  sep: 8,
+  oct: 9,
+  nov: 10,
+  dec: 11,
+};
+
+function parseBricksetShortDate(text) {
+  const match = String(text || "")
+    .trim()
+    .match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{2,4})$/);
+  if (!match) return null;
+
+  const day = parseInt(match[1], 10);
+  const month = BRICKSET_MONTHS[match[2].toLowerCase()];
+  let year = parseInt(match[3], 10);
+  if (month == null || !Number.isFinite(day) || !Number.isFinite(year)) return null;
+  if (year < 100) year += year >= 70 ? 1900 : 2000;
+
+  return new Date(Date.UTC(year, month, day));
+}
+
+function formatBricksetRetirementDate(text) {
+  const match = String(text || "")
+    .trim()
+    .match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{2,4})$/);
+  if (!match) return text?.trim() || null;
+
+  let year = parseInt(match[3], 10);
+  if (year < 100) year += year >= 70 ? 1900 : 2000;
+  return `${match[1]} ${match[2]} ${year}`;
+}
+
+function parseBricksetLaunchExit(text) {
+  if (!text) return { retirement_status: null, retirement_date: null };
+
+  const parts = String(text).trim().split(/\s*-\s*/);
+  if (parts.length < 2 || !parts[1]?.trim()) {
+    return { retirement_status: null, retirement_date: null };
+  }
+
+  const endText = parts[1].trim();
+  const endDate = parseBricksetShortDate(endText);
+  if (!endDate) return { retirement_status: null, retirement_date: null };
+
+  const today = new Date();
+  const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  if (endDate.getTime() < todayUtc) {
+    return {
+      retirement_status: "Retired",
+      retirement_date: formatBricksetRetirementDate(endText),
+    };
+  }
+
+  return { retirement_status: null, retirement_date: null };
+}
+
 async function fetchBricksetRetail(setNumber) {
   const num = String(setNumber).trim();
   const html = await fetchText(`https://brickset.com/sets/${num}-1`);
@@ -38,15 +103,20 @@ async function fetchBricksetRetail(setNumber) {
   const year = html.match(/<dt>Year released<\/dt>\s*<dd>[\s\S]*?(\d{4})/i);
   const avail = html.match(/<dt>Availability<\/dt>\s*<dd>([^<]+)/i);
   const retired = html.match(/<dt>Date retired<\/dt>\s*<dd>([^<]+)/i);
+  const launch = html.match(/<dt>Launch\/exit<\/dt>\s*<dd>([^<]+)/i);
 
   const uk_rrp = parseGbp(rrp?.[1]);
-  const retirement_status = mapBricksetAvailability(avail?.[1]);
+  const launchInfo = parseBricksetLaunchExit(launch?.[1]);
+  const retirement_status =
+    launchInfo.retirement_status ?? mapBricksetAvailability(avail?.[1]);
+  const retirement_date =
+    launchInfo.retirement_date ?? retired?.[1]?.trim() ?? null;
 
   return {
     uk_rrp,
     release_year: year ? parseInt(year[1], 10) : null,
     retirement_status,
-    retirement_date: retired?.[1]?.trim() || null,
+    retirement_date,
     uk_retail_price: uk_rrp && isAtRetail(retirement_status) ? uk_rrp : null,
     source_retail: "brickset",
   };
@@ -123,5 +193,6 @@ module.exports = {
   fetchRetailDetails,
   preserveRetailFields,
   parseBrickEconomyRetail,
+  parseBricksetLaunchExit,
   parseGbp,
 };

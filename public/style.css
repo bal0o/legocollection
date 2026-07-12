@@ -702,14 +702,21 @@ body {
 
 .missing-add-form {
   display: grid;
-  grid-template-columns: 1fr 5rem auto;
+  grid-template-columns: 1fr 4.5rem 4.5rem auto;
   gap: 0.5rem;
   align-items: end;
 }
 
 .missing-field-piece,
+.missing-field-qty,
 .missing-field-bag {
   margin-bottom: 0;
+}
+
+.missing-piece-qty {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--accent);
 }
 
 .missing-piece-preview {
@@ -1198,7 +1205,11 @@ body {
   }
 
   .missing-add-form {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr 4.5rem 4.5rem;
+  }
+
+  .missing-field-piece {
+    grid-column: 1 / -1;
   }
 
   .missing-add-form #missing-btn-add {

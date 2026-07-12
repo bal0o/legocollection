@@ -186,8 +186,28 @@ async function getSetPrices(setNumber) {
   };
 }
 
+async function getCatalogItem(type, itemNo) {
+  return brickLinkRequest(`/items/${type}/${encodeURIComponent(itemNo)}`);
+}
+
+async function getItemImage(type, itemNo, colorId) {
+  return brickLinkRequest(`/items/${type}/${encodeURIComponent(itemNo)}/images/${colorId}`);
+}
+
+async function getColor(colorId) {
+  return brickLinkRequest(`/colors/${colorId}`);
+}
+
+async function getElementMapping(elementId) {
+  return brickLinkRequest(`/item_mapping/${encodeURIComponent(elementId)}`);
+}
+
 module.exports = {
   getCredentials,
   getSetPrices,
   getPriceGuide,
+  getCatalogItem,
+  getItemImage,
+  getColor,
+  getElementMapping,
 };
