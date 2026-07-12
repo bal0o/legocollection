@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Sold History · LEGO Collection</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <h1>Sold History</h1>
+      <p class="subtitle">Actual sale price vs recommended values</p>
+    </div>
+    <nav class="header-nav">
+      <a href="/" class="nav-link">Collection</a>
+      <a href="/sold" class="nav-link active">Sold history</a>
+    </nav>
+    <div class="header-actions">
+      <a href="/" class="btn btn-secondary">← Back to collection</a>
+    </div>
+  </header>
+
+  <section class="stats" id="sold-stats">
+    <div class="stat-card">
+      <span class="stat-label">Items sold</span>
+      <span class="stat-value" id="stat-count">—</span>
+    </div>
+    <div class="stat-card highlight">
+      <span class="stat-label">Total revenue</span>
+      <span class="stat-value" id="stat-revenue">—</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Recommended (private)</span>
+      <span class="stat-value" id="stat-recommended">—</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Avg vs private</span>
+      <span class="stat-value" id="stat-avg-pct">—</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Total vs private</span>
+      <span class="stat-value" id="stat-total-pct">—</span>
+    </div>
+  </section>
+
+  <section class="filters">
+    <input type="search" id="filter-search" placeholder="Search set number or name…" />
+  </section>
+
+  <main class="table-wrap">
+    <table class="data-table sold-table">
+      <thead>
+        <tr>
+          <th><button type="button" class="sort-btn" data-sort="sold_date">Date</button></th>
+          <th><button type="button" class="sort-btn" data-sort="set_number">Set</button></th>
+          <th><button type="button" class="sort-btn" data-sort="description">Name</button></th>
+          <th class="hide-mobile"><button type="button" class="sort-btn" data-sort="condition">Condition</button></th>
+          <th class="num hide-mobile"><button type="button" class="sort-btn" data-sort="uk_rrp">RRP</button></th>
+          <th class="num"><button type="button" class="sort-btn" data-sort="sold_price">Sold</button></th>
+          <th class="num hide-mobile"><button type="button" class="sort-btn" data-sort="rec_private">Private</button></th>
+          <th class="num"><button type="button" class="sort-btn" data-sort="vs_private_pct">± Private</button></th>
+          <th class="num hide-mobile"><button type="button" class="sort-btn" data-sort="rec_ebay">eBay list</button></th>
+          <th class="num hide-mobile"><button type="button" class="sort-btn" data-sort="vs_ebay_pct">± eBay</button></th>
+        </tr>
+      </thead>
+      <tbody id="sold-body"></tbody>
+      <tfoot id="sold-foot"></tfoot>
+    </table>
+    <p id="empty-state" class="empty hidden">No sold items with a recorded price yet.</p>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/sold.js"></script>
+</body>
+</html>

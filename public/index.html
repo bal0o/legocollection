@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>LEGO Collection Manager</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <h1>LEGO Collection</h1>
+      <p class="subtitle">Valuation tracker · UK market prices</p>
+    </div>
+    <nav class="header-nav">
+      <a href="/" class="nav-link active">Collection</a>
+      <a href="/sold" class="nav-link">Sold history</a>
+    </nav>
+    <div class="header-actions">
+      <button id="btn-add" class="btn btn-primary">+ Add set</button>
+      <button id="btn-refresh-all" class="btn btn-secondary">Refresh all prices</button>
+    </div>
+  </header>
+
+  <div id="refresh-progress" class="refresh-progress hidden">
+    <div class="refresh-progress-inner">
+      <div class="refresh-progress-header">
+        <strong>Refreshing prices</strong>
+        <span id="refresh-progress-label">Starting…</span>
+      </div>
+      <div class="progress-bar"><div id="refresh-progress-fill" class="progress-fill"></div></div>
+      <p id="refresh-progress-detail" class="refresh-progress-detail"></p>
+    </div>
+  </div>
+
+  <section class="stats" id="stats">
+    <div class="stat-card">
+      <span class="stat-label">In collection</span>
+      <span class="stat-value" id="stat-collection">—</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">For sale</span>
+      <span class="stat-value" id="stat-for-sale">—</span>
+    </div>
+    <div class="stat-card highlight">
+      <span class="stat-label">Held value</span>
+      <span class="stat-value" id="stat-held-value">—</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Sold</span>
+      <span class="stat-value" id="stat-sold">—</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Total RRP</span>
+      <span class="stat-value" id="stat-rrp">—</span>
+    </div>
+  </section>
+
+  <section class="filters">
+    <input type="search" id="filter-search" placeholder="Search set number or name…" />
+    <select id="filter-status">
+      <option value="held" selected>All held</option>
+      <option value="collection">In collection</option>
+      <option value="for_sale">For sale</option>
+      <option value="sold">Sold</option>
+    </select>
+  </section>
+
+  <main class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th><button type="button" class="sort-btn" data-sort="set_number">Set</button></th>
+          <th><button type="button" class="sort-btn" data-sort="description">Name</button></th>
+          <th><button type="button" class="sort-btn" data-sort="condition">Condition</button></th>
+          <th><button type="button" class="sort-btn" data-sort="listing_status">Status</button></th>
+          <th class="num"><button type="button" class="sort-btn" data-sort="quantity_held">Held</button></th>
+          <th class="num"><button type="button" class="sort-btn" data-sort="quantity_listed">Listed</button></th>
+          <th class="num hide-mobile"><button type="button" class="sort-btn" data-sort="uk_rrp">RRP</button></th>
+          <th class="num"><button type="button" class="sort-btn" data-sort="bl_used_avg">BL Used</button></th>
+          <th class="num hide-mobile"><button type="button" class="sort-btn" data-sort="bl_sealed_avg">BL Sealed</button></th>
+          <th class="num hide-mobile"><button type="button" class="sort-btn" data-sort="ebay_sold_avg">eBay Sold</button></th>
+          <th class="num"><button type="button" class="sort-btn" data-sort="private_sale_value">Private</button></th>
+          <th class="num"><button type="button" class="sort-btn" data-sort="ebay_listing_price">eBay List</button></th>
+          <th class="num listed-col"><button type="button" class="sort-btn" data-sort="listed_price">Listed £</button></th>
+          <th class="num sold-col hidden"><button type="button" class="sort-btn" data-sort="sold_price">Sold £</button></th>
+          <th><button type="button" class="sort-btn" data-sort="investment_rating">Rating</button></th>
+          <th class="col-actions">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="sets-body"></tbody>
+    </table>
+    <p id="empty-state" class="empty hidden">No sets match your filters.</p>
+  </main>
+
+  <dialog id="modal-add" class="modal">
+    <form id="form-add" method="dialog">
+      <h2>Add set</h2>
+      <label>
+        Set number
+        <input type="text" id="add-set-number" placeholder="e.g. 75355" inputmode="numeric" pattern="[0-9]{4,6}" required />
+      </label>
+      <label>
+        Quantity held
+        <input type="number" id="add-quantity-held" value="1" min="1" step="1" required />
+      </label>
+      <label>
+        Condition
+        <select id="add-condition">
+          <option>BNIB</option>
+          <option selected>Complete, bagged</option>
+          <option>Complete, dismantled</option>
+          <option>Missing piece</option>
+        </select>
+      </label>
+      <p class="form-hint">Set name and prices are fetched automatically from Rebrickable and BrickLink.</p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close>Cancel</button>
+        <button type="submit" class="btn btn-primary" id="btn-add-submit">Add & fetch prices</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="modal-for-sale" class="modal">
+    <form id="form-for-sale" method="dialog">
+      <h2 id="for-sale-modal-title">List for sale</h2>
+      <p id="for-sale-set-label"></p>
+      <label>
+        Listed price (£)
+        <input type="number" id="listed-price" step="0.01" min="0" required />
+      </label>
+      <label>
+        Listed date
+        <input type="date" id="listed-date" />
+      </label>
+      <label>
+        Quantity listed
+        <input type="number" id="listed-quantity" value="1" min="1" step="1" required />
+      </label>
+      <p class="form-hint" id="for-sale-hint"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close>Cancel</button>
+        <button type="submit" class="btn btn-primary" id="for-sale-submit-btn">Confirm listing</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="modal-sold" class="modal">
+    <form id="form-sold" method="dialog">
+      <h2 id="sold-modal-title">Mark as sold</h2>
+      <p id="sold-set-label"></p>
+      <label>
+        Sold price (£)
+        <input type="number" id="sold-price" step="0.01" min="0" required />
+      </label>
+      <label>
+        Sold date
+        <input type="date" id="sold-date" />
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close>Cancel</button>
+        <button type="submit" class="btn btn-primary" id="sold-submit-btn">Confirm sold</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="modal-history" class="modal modal-wide">
+    <div class="history-header">
+      <h2 id="history-title">Price history</h2>
+      <button type="button" class="btn btn-ghost" data-close>Close</button>
+    </div>
+    <p id="history-meta" class="history-meta"></p>
+    <div class="history-table-wrap">
+      <table class="data-table history-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th class="num">BL Used</th>
+            <th class="num">BL Sealed</th>
+            <th class="num">eBay Sold</th>
+            <th class="num">Private</th>
+            <th class="num">eBay List</th>
+          </tr>
+        </thead>
+        <tbody id="history-body"></tbody>
+      </table>
+    </div>
+    <h3 class="history-sub">Recent eBay sales</h3>
+    <ul id="history-ebay-sales" class="ebay-sales-list"></ul>
+  </dialog>
+
+  <dialog id="modal-detail" class="modal modal-wide">
+    <div class="detail-header">
+      <h2 id="detail-title">Set details</h2>
+      <button type="button" class="btn btn-ghost" data-close>Close</button>
+    </div>
+    <div class="detail-layout">
+      <div class="detail-image-wrap">
+        <img id="detail-image" class="detail-image" alt="" />
+      </div>
+      <div class="detail-info">
+        <p id="detail-meta" class="detail-meta"></p>
+        <div class="detail-prices">
+          <div class="detail-price-card">
+            <span class="detail-price-label">Private sale</span>
+            <span class="detail-price-value" id="detail-private">—</span>
+            <span class="detail-price-hint">Vinted, Facebook, cash</span>
+          </div>
+          <div class="detail-price-card highlight">
+            <span class="detail-price-label">eBay listing</span>
+            <span class="detail-price-value" id="detail-ebay">—</span>
+            <span class="detail-price-hint">Includes fees &amp; postage</span>
+          </div>
+        </div>
+        <div class="detail-stats" id="detail-stats"></div>
+
+        <div class="detail-manage">
+          <h3 class="detail-manage-title">Status &amp; pricing</h3>
+          <label class="detail-field">
+            Status
+            <select id="detail-status" class="detail-input">
+              <option value="collection">In collection</option>
+              <option value="for_sale">For sale</option>
+              <option value="sold">Sold</option>
+            </select>
+          </label>
+          <div class="detail-qty-fields">
+            <label class="detail-field">
+              Quantity held
+              <input type="number" id="detail-quantity-held" class="detail-input" min="1" step="1" />
+            </label>
+            <label class="detail-field">
+              Quantity listed
+              <input type="number" id="detail-quantity-listed" class="detail-input" min="0" step="1" />
+            </label>
+          </div>
+          <div id="detail-listed-fields" class="detail-status-fields hidden">
+            <label class="detail-field">
+              Listed price (£)
+              <input type="number" id="detail-listed-price-input" class="detail-input" step="0.01" min="0" />
+            </label>
+            <label class="detail-field">
+              Listed date
+              <input type="date" id="detail-listed-date-input" class="detail-input" />
+            </label>
+          </div>
+          <div id="detail-sold-fields" class="detail-status-fields hidden">
+            <label class="detail-field">
+              Sold price (£)
+              <input type="number" id="detail-sold-price-input" class="detail-input" step="0.01" min="0" />
+            </label>
+            <label class="detail-field">
+              Sold date
+              <input type="date" id="detail-sold-date-input" class="detail-input" />
+            </label>
+          </div>
+          <button type="button" id="detail-btn-save-status" class="btn btn-primary btn-sm">Save status &amp; pricing</button>
+        </div>
+      </div>
+    </div>
+    <div class="detail-listing">
+      <div class="detail-listing-header">
+        <h3>Listing description</h3>
+        <button type="button" id="btn-copy-listing" class="btn btn-secondary btn-sm">Copy to clipboard</button>
+      </div>
+      <textarea id="detail-listing-text" class="listing-text" readonly rows="12"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-ghost" id="detail-btn-history">Price history</button>
+      <button type="button" class="btn btn-secondary" id="detail-btn-refresh">Refresh prices</button>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

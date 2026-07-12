@@ -1,0 +1,32 @@
+services:
+  legocollection:
+    image: bal0o/legocollection:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: legocollection
+    restart: unless-stopped
+    ports:
+      - "3456:3456"
+    environment:
+      - PORT=3456
+      - DAILY_REFRESH_ENABLED=true
+      - DAILY_REFRESH_HOUR=3
+      - DAILY_REFRESH_MINUTE=0
+      # Optional API keys (or use env_file: .env)
+      # - REBRICKABLE_API_KEY=
+      # - BRICKLINK_CONSUMER_KEY=
+      # - BRICKLINK_CONSUMER_SECRET=
+      # - BRICKLINK_TOKEN=
+      # - BRICKLINK_TOKEN_SECRET=
+      # Unraid: match your appdata folder ownership
+      # - PUID=99
+      # - PGID=100
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:3456/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15s

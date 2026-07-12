@@ -1,0 +1,17 @@
+{
+  "name": "lego-collection-manager",
+  "version": "1.0.0",
+  "description": "LEGO collection valuation tracker",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "import": "node scripts/import-csv.js",
+    "refresh-all": "node scripts/daily-refresh.js"
+  },
+  "dependencies": {
+    "csv-parse": "^5.6.0",
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2"
+  }
+}
