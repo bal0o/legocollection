@@ -13,6 +13,7 @@ const LOCK_PATH = path.join(__dirname, "..", "data", ".refresh-lock");
 const LOCK_STALE_MS = 2 * 60 * 60 * 1000;
 
 let refreshInProgress = false;
+let refreshStatus = null;
 
 function readLock() {
   if (!fs.existsSync(LOCK_PATH)) return null;
@@ -44,6 +45,55 @@ function releaseLock() {
   } catch {
     /* ignore */
   }
+}
+
+function isLockActive() {
+  const existing = readLock();
+  if (!existing) return false;
+  const age = Date.now() - new Date(existing.started_at).getTime();
+  if (age >= LOCK_STALE_MS) {
+    releaseLock();
+    return false;
+  }
+  return true;
+}
+
+function updateRefreshStatus(patch) {
+  refreshStatus = {
+    active: true,
+    current: 0,
+    total: 0,
+    set_number: null,
+    description: null,
+    status: null,
+    phase: "starting",
+    ...refreshStatus,
+    ...patch,
+    updated_at: Date.now(),
+  };
+}
+
+function clearRefreshStatus() {
+  refreshStatus = null;
+}
+
+function getRefreshStatus() {
+  if (refreshInProgress || refreshStatus?.active) {
+    return refreshStatus || { active: true, phase: "starting", current: 0, total: 0 };
+  }
+  if (isLockActive()) {
+    const lock = readLock();
+    return {
+      active: true,
+      phase: "running",
+      current: 0,
+      total: 0,
+      source: lock?.source || null,
+      started_at: lock?.started_at || null,
+      updated_at: Date.now(),
+    };
+  }
+  return { active: false };
 }
 
 function getHeldSets() {
@@ -92,19 +142,59 @@ async function retryMissingEbay(sets, { onProgress, ebayRetryDelay = 2500 } = {}
   return results;
 }
 
+function wrapProgress(onProgress) {
+  return (data) => {
+    if (data.type === "start") {
+      updateRefreshStatus({
+        phase: "refreshing",
+        current: 0,
+        total: data.total,
+        status: "starting",
+      });
+    } else if (data.type === "progress") {
+      updateRefreshStatus({
+        phase: data.status === "ebay_retry" ? "ebay_retry" : "refreshing",
+        current: data.current ?? refreshStatus?.current ?? 0,
+        total: data.total ?? refreshStatus?.total ?? 0,
+        set_number: data.set_number ?? null,
+        description: data.description ?? null,
+        status: data.status ?? null,
+      });
+    } else if (data.type === "ebay_retry") {
+      updateRefreshStatus({ phase: "ebay_retry", total: data.total, status: "ebay_retry" });
+    } else if (data.type === "complete") {
+      updateRefreshStatus({
+        phase: "complete",
+        current: data.total ?? refreshStatus?.total ?? 0,
+        total: data.total ?? refreshStatus?.total ?? 0,
+        status: "complete",
+        refreshed: data.refreshed,
+        failed_count: data.failed?.length ?? 0,
+      });
+    } else if (data.type === "error") {
+      updateRefreshStatus({ phase: "error", status: "error", error: data.error });
+    }
+    onProgress?.(data);
+  };
+}
+
 async function refreshAllSets({
   onProgress,
   delayBetween = 1400,
   ebayRetryDelay = 2500,
   source = "manual",
 } = {}) {
-  if (refreshInProgress || !acquireLock(source)) {
+  if (refreshInProgress || isLockActive()) {
+    return { skipped: true, reason: "refresh already in progress", source };
+  }
+  if (!acquireLock(source)) {
     return { skipped: true, reason: "refresh already in progress", source };
   }
 
   refreshInProgress = true;
   const startedAt = new Date().toISOString();
   const sets = getHeldSets();
+  const progress = wrapProgress(onProgress);
   const results = {
     source,
     started_at: startedAt,
@@ -114,12 +204,21 @@ async function refreshAllSets({
     ebay_retried: 0,
   };
 
+  updateRefreshStatus({
+    active: true,
+    phase: "starting",
+    current: 0,
+    total: sets.length,
+    source,
+    started_at: startedAt,
+  });
+
   try {
-    onProgress?.({ type: "start", total: sets.length, source });
+    progress({ type: "start", total: sets.length, source });
 
     for (let i = 0; i < sets.length; i++) {
       const set = sets[i];
-      onProgress?.({
+      progress({
         type: "progress",
         current: i + 1,
         total: sets.length,
@@ -132,7 +231,7 @@ async function refreshAllSets({
         const pricing = await fetchPricing(set.set_number, set.condition, set.slug, set.price_history, set);
         store.updateSet(set.id, pricing);
         results.refreshed++;
-        onProgress?.({
+        progress({
           type: "progress",
           current: i + 1,
           total: sets.length,
@@ -143,7 +242,7 @@ async function refreshAllSets({
         await sleep(delayBetween);
       } catch (err) {
         results.failed.push({ set_number: set.set_number, error: err.message });
-        onProgress?.({
+        progress({
           type: "progress",
           current: i + 1,
           total: sets.length,
@@ -155,26 +254,28 @@ async function refreshAllSets({
       }
     }
 
-    const ebayResults = await retryMissingEbay(sets, { onProgress, ebayRetryDelay });
+    const ebayResults = await retryMissingEbay(sets, { onProgress: progress, ebayRetryDelay });
     results.ebay_retried = ebayResults.ebay_retried;
     results.failed.push(...ebayResults.failed);
     results.finished_at = new Date().toISOString();
     results.ok = results.failed.length === 0;
 
-    onProgress?.({ type: "complete", ...results });
+    progress({ type: "complete", ...results });
     return results;
   } finally {
     refreshInProgress = false;
     releaseLock();
+    setTimeout(clearRefreshStatus, 5000);
   }
 }
 
 function isRefreshInProgress() {
-  return refreshInProgress || !!readLock();
+  return refreshInProgress || isLockActive();
 }
 
 module.exports = {
   getHeldSets,
   refreshAllSets,
   isRefreshInProgress,
+  getRefreshStatus,
 };

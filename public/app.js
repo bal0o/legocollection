@@ -380,6 +380,37 @@ async function refreshSet(id, btn) {
   }
 }
 
+function applyRefreshProgress(data, { fill, label, detail }) {
+  if (!data) return null;
+
+  const total = data.total ?? 0;
+  const current = data.current ?? 0;
+  const isLive =
+    data.type === "start" ||
+    data.type === "progress" ||
+    data.type === "complete" ||
+    data.active;
+
+  if (!isLive) return null;
+
+  const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+  fill.style.width = `${pct}%`;
+  label.textContent = total > 0 ? `${current} / ${total}` : "Starting…";
+
+  if (data.set_number) {
+    const statusIcon =
+      data.status === "done" ? "✓" : data.status === "failed" ? "✗" : data.status === "ebay_retry" ? "eBay" : "…";
+    detail.textContent = `${statusIcon} ${data.set_number} ${data.description || ""}`.trim();
+  } else if (data.phase === "ebay_retry") {
+    detail.textContent = "Retrying missing eBay prices…";
+  } else if (data.phase === "starting") {
+    detail.textContent = "Starting refresh…";
+  }
+
+  if (data.type === "complete" || data.phase === "complete") return data;
+  return null;
+}
+
 async function refreshAll() {
   const btn = $("#btn-refresh-all");
   const progress = $("#refresh-progress");
@@ -392,16 +423,42 @@ async function refreshAll() {
   progress.classList.remove("hidden");
   fill.style.width = "0%";
   label.textContent = "Starting…";
-  detail.textContent = "";
+  detail.textContent = "Connecting…";
+
+  let pollTimer = null;
+  let finalResult = null;
+
+  const ui = { fill, label, detail };
+  const stopPoll = () => {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = null;
+  };
+
+  pollTimer = setInterval(async () => {
+    try {
+      const status = await api("/api/sets/refresh-status");
+      const done = applyRefreshProgress(status, ui);
+      if (done) finalResult = done;
+      if (!status.active && status.phase === "complete") stopPoll();
+    } catch {
+      /* ignore poll errors */
+    }
+  }, 1000);
 
   try {
-    const res = await fetch("/api/sets/refresh-all", { method: "POST" });
-    if (!res.ok) throw new Error(`Refresh failed (${res.status})`);
+    const res = await fetch("/api/sets/refresh-all", {
+      method: "POST",
+      headers: { Accept: "text/event-stream" },
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `Refresh failed (${res.status})`);
+    }
+    if (!res.body) throw new Error("Refresh stream unavailable in this browser");
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
-    let finalResult = null;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -415,17 +472,12 @@ async function refreshAll() {
         if (!line.startsWith("data: ")) continue;
         const data = JSON.parse(line.slice(6));
 
-        if (data.type === "start") {
-          label.textContent = `0 / ${data.total}`;
-        } else if (data.type === "progress") {
-          const pct = Math.round((data.current / data.total) * 100);
-          fill.style.width = `${pct}%`;
-          label.textContent = `${data.current} / ${data.total}`;
-          const statusIcon = data.status === "done" ? "✓" : data.status === "failed" ? "✗" : "…";
-          detail.textContent = `${statusIcon} ${data.set_number} ${data.description || ""}`;
-        } else if (data.type === "complete") {
-          finalResult = data;
+        if (data.type === "error") {
+          throw new Error(data.error || "Refresh failed");
         }
+
+        const doneResult = applyRefreshProgress(data, ui);
+        if (doneResult) finalResult = doneResult;
       }
     }
 
@@ -437,7 +489,9 @@ async function refreshAll() {
     await refresh();
   } catch (err) {
     toast(err.message, "error");
+    detail.textContent = err.message;
   } finally {
+    stopPoll();
     btn.disabled = false;
     btn.textContent = "Refresh all prices";
     setTimeout(() => progress.classList.add("hidden"), 1500);

@@ -6,7 +6,7 @@ const store = require("./db/database");
 const { searchSets, fetchPricing, lookupSetMetadata, normalizeSetNumber } = require("./services/pricing");
 const { generateListingText } = require("./services/listing");
 const { lookupPart, enrichMissingPieces } = require("./services/parts");
-const { refreshAllSets, isRefreshInProgress } = require("./services/refresh-all");
+const { refreshAllSets, isRefreshInProgress, getRefreshStatus } = require("./services/refresh-all");
 const { startDailyRefreshScheduler } = require("./services/scheduler");
 const { importCsv } = require("./scripts/import-csv");
 
@@ -153,18 +153,27 @@ app.post("/api/sets/refresh-names", async (_req, res) => {
   res.json(results);
 });
 
+app.get("/api/sets/refresh-status", (_req, res) => {
+  res.json(getRefreshStatus());
+});
+
 app.post("/api/sets/refresh-all", async (req, res) => {
   if (isRefreshInProgress()) {
-    return res.status(409).json({ error: "A price refresh is already running" });
+    return res.status(409).json({
+      error: "A price refresh is already running. Wait for it to finish or restart the app if it appears stuck.",
+    });
   }
 
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders?.();
 
   const send = (data) => {
+    if (res.writableEnded) return;
     res.write(`data: ${JSON.stringify(data)}\n\n`);
+    if (typeof res.flush === "function") res.flush();
   };
 
   try {
