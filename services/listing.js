@@ -3,17 +3,28 @@ function roundListing(n) {
   return Math.ceil(n / 5) * 5;
 }
 
+const CONDITION_DESCRIPTIONS = {
+  BNIB: "BNIB — unbuilt, still factory sealed as received from LEGO.",
+  "Complete, bagged":
+    "Complete, bagged — all pieces present, repacked into the original numbered bags for re-assembly. Instructions included.",
+  "Complete, dismantled":
+    "Complete, dismantled — all pieces present, stored in non-numbered bags. Instructions included.",
+  "Missing piece": "Incomplete set — missing pieces are listed below and are not included in the sale.",
+};
+
 function conditionDetail(condition, missingPieces = []) {
   const c = (condition || "").toLowerCase();
-  if (c.includes("missing") || missingPieces.length > 0) {
-    if (missingPieces.length > 0) {
-      return `Missing ${missingPieces.length} piece${missingPieces.length === 1 ? "" : "s"} — see list below.`;
+  const missing = Array.isArray(missingPieces) ? missingPieces : [];
+
+  if (c.includes("bnib")) return CONDITION_DESCRIPTIONS.BNIB;
+  if (c.includes("bagged")) return CONDITION_DESCRIPTIONS["Complete, bagged"];
+  if (c.includes("missing") || missing.length > 0) {
+    if (missing.length > 0) {
+      return `Incomplete — ${missing.length} missing piece${missing.length === 1 ? "" : "s"} (not included), listed below.`;
     }
-    return "Mostly complete — missing pieces listed below.";
+    return "Incomplete set — missing pieces not included.";
   }
-  if (c.includes("bnib")) return "Brand new, sealed in box (BNIB). Never opened.";
-  if (c.includes("bagged")) return "Complete with all pieces, bagged by set. Instructions included.";
-  return "Complete with all pieces and instructions. Dismantled and bagged.";
+  return CONDITION_DESCRIPTIONS["Complete, dismantled"];
 }
 
 function formatMissingPieceLine(piece) {
@@ -69,4 +80,5 @@ module.exports = {
   generateListingText,
   setImageUrl,
   conditionDetail,
+  CONDITION_DESCRIPTIONS,
 };

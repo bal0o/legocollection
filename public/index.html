@@ -112,6 +112,7 @@
           <option>Complete, dismantled</option>
           <option>Missing piece</option>
         </select>
+        <p class="form-hint" id="add-condition-hint">Complete, bagged — all pieces present, repacked into the original numbered bags for re-assembly.</p>
       </label>
       <p class="form-hint">Set name and prices are fetched automatically from Rebrickable and BrickLink.</p>
       <div class="modal-actions">
@@ -218,6 +219,7 @@
               <option>Complete, dismantled</option>
               <option>Missing piece</option>
             </select>
+            <p class="form-hint" id="detail-condition-hint"></p>
           </label>
           <label class="detail-field">
             Status
@@ -262,7 +264,7 @@
 
         <div id="detail-missing-section" class="detail-missing hidden">
           <h3 class="detail-manage-title">Missing pieces</h3>
-          <p class="form-hint">Enter the part number and which instruction bag it belongs in. Names and images load from Rebrickable.</p>
+          <p class="form-hint">Record each missing part number and bag — they are added to the listing description automatically.</p>
           <ul id="detail-missing-list" class="missing-pieces-list"></ul>
           <div class="missing-add-form">
             <label class="detail-field missing-field-piece">
@@ -282,8 +284,12 @@
     <div class="detail-listing">
       <div class="detail-listing-header">
         <h3>Listing description</h3>
-        <button type="button" id="btn-copy-listing" class="btn btn-secondary btn-sm">Copy to clipboard</button>
+        <div class="detail-listing-actions">
+          <button type="button" id="detail-btn-list-bl" class="btn btn-primary btn-sm">List on BrickLink</button>
+          <button type="button" id="btn-copy-listing" class="btn btn-secondary btn-sm">Copy to clipboard</button>
+        </div>
       </div>
+      <p id="detail-bl-status" class="detail-bl-status hidden"></p>
       <textarea id="detail-listing-text" class="listing-text" readonly rows="12"></textarea>
     </div>
     <div class="modal-actions">

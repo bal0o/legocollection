@@ -9,6 +9,19 @@ function recommendedPrice(set) {
   return set.recommended_price ?? set.private_sale_value ?? set.ebay_listing_price ?? null;
 }
 
+const CONDITION_HINTS = {
+  BNIB: "Unbuilt — still factory sealed as received from LEGO.",
+  "Complete, bagged":
+    "All pieces present, repacked into the original numbered bags for re-assembly.",
+  "Complete, dismantled": "All pieces present, stored in non-numbered bags.",
+  "Missing piece": "Add missing parts below — they are included in the listing description.",
+};
+
+function updateConditionHint(selectEl, hintEl) {
+  if (!selectEl || !hintEl) return;
+  hintEl.textContent = CONDITION_HINTS[selectEl.value] || "";
+}
+
 function setImageUrl(set) {
   if (set.image_url) return set.image_url;
   return `https://images.brickset.com/sets/images/${set.set_number}-1.jpg`;
@@ -643,6 +656,7 @@ async function previewMissingPiece() {
 function populateDetailManageForm(set) {
   detailCurrentSet = set;
   $("#detail-condition").value = set.condition || "Complete, dismantled";
+  updateConditionHint($("#detail-condition"), $("#detail-condition-hint"));
   $("#detail-status").value = set.listing_status || "collection";
   $("#detail-quantity-held").value = set.quantity_held ?? 1;
   $("#detail-quantity-listed").value = set.quantity_listed ?? 0;
@@ -708,12 +722,14 @@ async function openSetDetailAsync(id) {
     .join("");
 
   $("#detail-listing-text").value = set.listing_text || "";
+  updateBrickLinkStatus(set);
   populateDetailManageForm(set);
 
   $("#modal-detail").showModal();
 }
 
 $("#detail-condition").addEventListener("change", (e) => {
+  updateConditionHint(e.target, $("#detail-condition-hint"));
   updateMissingSectionVisibility(e.target.value, detailCurrentSet?.missing_pieces || []);
 });
 
@@ -857,6 +873,85 @@ $("#detail-btn-save-status").addEventListener("click", async () => {
   } finally {
     btn.disabled = false;
     btn.textContent = "Save status & pricing";
+  }
+});
+
+function detailListingPrice() {
+  const listed = parseFloat($("#detail-listed-price-input").value);
+  if (Number.isFinite(listed) && listed > 0) return listed;
+  return recommendedPrice(detailCurrentSet);
+}
+
+function detailListingQuantity() {
+  const listed = parseInt($("#detail-quantity-listed").value, 10);
+  if (Number.isFinite(listed) && listed > 0) return listed;
+  const held = parseInt($("#detail-quantity-held").value, 10);
+  if (Number.isFinite(held) && held > 0) return held;
+  return detailCurrentSet?.quantity_listed || detailCurrentSet?.quantity_held || 1;
+}
+
+function updateBrickLinkStatus(set) {
+  const el = $("#detail-bl-status");
+  if (!set?.bricklink_inventory_id) {
+    el.classList.add("hidden");
+    el.innerHTML = "";
+    return;
+  }
+  const url = `https://www.bricklink.com/v2/inventory_detail.page?invID=${set.bricklink_inventory_id}`;
+  const when = set.bricklink_listed_at
+    ? new Date(set.bricklink_listed_at).toLocaleString("en-GB")
+    : null;
+  el.innerHTML = `Listed on BrickLink: <a href="${url}" target="_blank" rel="noopener">#${set.bricklink_inventory_id}</a>${when ? ` · ${when}` : ""}`;
+  el.classList.remove("hidden");
+}
+
+$("#detail-btn-list-bl").addEventListener("click", async () => {
+  if (!detailTargetId || !detailCurrentSet) return;
+
+  const price = detailListingPrice();
+  const quantity = detailListingQuantity();
+  const condition = $("#detail-condition").value;
+
+  if (price == null || price <= 0) {
+    toast("Enter a listed price or refresh prices first", "error");
+    return;
+  }
+
+  const condLabel = condition || detailCurrentSet.condition;
+  const ok = window.confirm(
+    `List on BrickLink?\n\n` +
+      `${detailCurrentSet.set_number} — ${detailCurrentSet.description}\n` +
+      `Price: £${Number(price).toFixed(2)}\n` +
+      `Quantity: ${quantity}\n` +
+      `Condition: ${condLabel}\n\n` +
+      `This creates a live listing in your BrickLink store.`
+  );
+  if (!ok) return;
+
+  const btn = $("#detail-btn-list-bl");
+  btn.disabled = true;
+  btn.textContent = "Listing…";
+
+  try {
+    const result = await api(`/api/sets/${detailTargetId}/list-bricklink`, {
+      method: "POST",
+      body: JSON.stringify({ price, quantity, condition }),
+    });
+    if (result.set) {
+      const idx = cachedSets.findIndex((s) => String(s.id) === String(detailTargetId));
+      if (idx >= 0) cachedSets[idx] = result.set;
+      detailCurrentSet = result.set;
+      populateDetailManageForm(result.set);
+      updateBrickLinkStatus(result.set);
+    }
+    toast(`Listed on BrickLink (#${result.inventory_id})`);
+    await refresh();
+    if (result.url) window.open(result.url, "_blank", "noopener");
+  } catch (err) {
+    toast(err.message, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "List on BrickLink";
   }
 });
 
@@ -1004,8 +1099,13 @@ $("#form-sold").addEventListener("submit", async (e) => {
 $("#btn-add").addEventListener("click", () => {
   $("#add-set-number").value = "";
   $("#add-quantity-held").value = "1";
+  updateConditionHint($("#add-condition"), $("#add-condition-hint"));
   $("#modal-add").showModal();
   $("#add-set-number").focus();
+});
+
+$("#add-condition").addEventListener("change", (e) => {
+  updateConditionHint(e.target, $("#add-condition-hint"));
 });
 
 $$("[data-close]").forEach((btn) => {
