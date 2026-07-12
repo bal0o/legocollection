@@ -265,14 +265,29 @@ function estimateValues(data, condition) {
   return suggestListingPrices(data, condition);
 }
 
-async function fetchPricing(setNumber, condition, slugHint, existingHistory = [], existingSet = {}) {
+async function fetchPricing(
+  setNumber,
+  condition,
+  slugHint,
+  existingHistory = [],
+  existingSet = {},
+  options = {}
+) {
   const num = normalizeSetNumber(setNumber);
-  const [meta, be, bl, ebay, ebayAsks] = await Promise.allSettled([
-    lookupSetMetadata(num),
-    fetchBrickEconomyDetails(num, slugHint),
+  const isRefresh = options.refresh ?? Boolean(existingSet?.id);
+  const skipEbayAsks = options.skipEbayAsks ?? isRefresh;
+  const skipBrickEconomy = options.skipBrickEconomy ?? isRefresh;
+  const skipMetadata = options.skipMetadata ?? (isRefresh && Boolean(existingSet?.description));
+
+  const [meta, be, bl, ebay, ebayAsks, bricksetRetail] = await Promise.allSettled([
+    skipMetadata ? Promise.resolve(null) : lookupSetMetadata(num),
+    skipBrickEconomy ? Promise.resolve(null) : fetchBrickEconomyDetails(num, slugHint),
     fetchBrickLinkPrices(num),
     fetchEbaySoldData(num, condition),
-    fetchEbayActiveAsks(num),
+    skipEbayAsks
+      ? Promise.resolve({})
+      : fetchEbayActiveAsks(num),
+    fetchBricksetRetail(num).catch(() => ({})),
   ]);
 
   const metaData = meta.status === "fulfilled" ? meta.value : null;
@@ -280,40 +295,34 @@ async function fetchPricing(setNumber, condition, slugHint, existingHistory = []
   const blData = bl.status === "fulfilled" ? bl.value : {};
   const ebayData = ebay.status === "fulfilled" ? ebay.value : {};
   const ebayAskData = ebayAsks.status === "fulfilled" ? ebayAsks.value : {};
-  const slug = slugHint || metaData?.slug || beData?.slug;
+  const bricksetData =
+    bricksetRetail.status === "fulfilled" && bricksetRetail.value ? bricksetRetail.value : {};
+  const slug = slugHint || metaData?.slug || beData?.slug || existingSet?.slug;
 
-  let bricksetRetail = {};
-  try {
-    bricksetRetail = await fetchBricksetRetail(num);
-  } catch {
-    bricksetRetail = {};
-  }
-
-  const ukRrp = bricksetRetail.uk_rrp ?? beData.uk_rrp ?? null;
-  const retirementStatus = bricksetRetail.retirement_status ?? beData.retirement_status ?? null;
+  const ukRrp = bricksetData.uk_rrp ?? beData.uk_rrp ?? null;
+  const retirementStatus = bricksetData.retirement_status ?? beData.retirement_status ?? null;
   const atRetail =
     (retirementStatus || "").includes("Retail") || (retirementStatus || "").includes("Exclusive");
 
   const merged = {
     set_number: num,
-    condition: condition || "Complete, dismantled",
-    description: metaData?.name || beData?.description || `Set ${num}`,
-    release_year: metaData?.year || bricksetRetail.release_year || beData?.release_year || null,
+    condition: condition || existingSet?.condition || "Complete, dismantled",
+    description: metaData?.name || beData?.description || existingSet?.description || `Set ${num}`,
+    release_year: metaData?.year || bricksetData.release_year || beData?.release_year || existingSet?.release_year || null,
     slug,
     ...beData,
     uk_rrp: ukRrp,
     retirement_status: retirementStatus,
-    retirement_date: bricksetRetail.retirement_date ?? beData.retirement_date ?? null,
+    retirement_date: bricksetData.retirement_date ?? beData.retirement_date ?? existingSet?.retirement_date ?? null,
     uk_retail_price: ukRrp && atRetail ? ukRrp : null,
-    description: metaData?.name || beData?.description || `Set ${num}`,
     bl_used_avg: blData.bl_used_avg ?? beData?.bl_used_avg ?? null,
     bl_sealed_avg: blData.bl_sealed_avg ?? beData?.bl_sealed_avg ?? null,
     bl_used_stock_avg: blData.bl_used_stock_avg ?? null,
     bl_used_stock_min: blData.bl_used_stock_min ?? null,
     bl_sealed_stock_avg: blData.bl_sealed_stock_avg ?? null,
     bl_sealed_stock_min: blData.bl_sealed_stock_min ?? null,
-    image_url: metaData?.image_url || null,
-    num_parts: metaData?.num_parts || null,
+    image_url: metaData?.image_url || existingSet?.image_url || null,
+    num_parts: metaData?.num_parts || existingSet?.num_parts || null,
     ...ebayData,
     ...ebayAskData,
     prices_refreshed_at: new Date().toISOString(),
@@ -323,7 +332,7 @@ async function fetchPricing(setNumber, condition, slugHint, existingHistory = []
       ebayData?.ebay_source ? `eBay sold via ${ebayData.ebay_source}` : ebayData?.ebay_error ? `eBay: ${ebayData.ebay_error}` : null,
       ebayAskData?.ebay_ask_count ? `eBay asks (${ebayAskData.ebay_ask_count} listings)` : null,
       beData?.source_be ? "BrickEconomy metadata" : null,
-      bricksetRetail?.uk_rrp ? "Brickset RRP" : null,
+      bricksetData?.uk_rrp ? "Brickset RRP" : null,
     ]
       .filter(Boolean)
       .join(" · ") || "Auto-fetched",

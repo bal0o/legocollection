@@ -5,7 +5,7 @@ const path = require("path");
 const store = require("./db/database");
 const { searchSets, fetchPricing, lookupSetMetadata, normalizeSetNumber } = require("./services/pricing");
 const { generateListingText } = require("./services/listing");
-const { lookupPart, enrichMissingPieces } = require("./services/parts");
+const { lookupPart, enrichMissingPieces, pieceNeedsLookup } = require("./services/parts");
 const { refreshAllSets, isRefreshInProgress, getRefreshStatus } = require("./services/refresh-all");
 const { startDailyRefreshScheduler } = require("./services/scheduler");
 const { importCsv } = require("./scripts/import-csv");
@@ -44,12 +44,14 @@ app.get("/api/sets", (req, res) => {
 
 app.get("/api/sets/:id", async (req, res) => {
   try {
-    const set = store.getSet(Number(req.params.id));
+    let set = store.getSet(Number(req.params.id));
     if (!set) return res.status(404).json({ error: "Set not found" });
 
-    if (set.missing_pieces?.length) {
-      set.missing_pieces = await enrichMissingPieces(set.missing_pieces);
+    if (set.missing_pieces?.some(pieceNeedsLookup)) {
+      const enriched = await enrichMissingPieces(set.missing_pieces);
+      set = store.updateSet(set.id, { missing_pieces: enriched });
     }
+
     set.listing_text = generateListingText(set);
     res.json(set);
   } catch (err) {
@@ -116,7 +118,9 @@ app.post("/api/sets/:id/refresh", async (req, res) => {
     const set = store.getSet(Number(req.params.id));
     if (!set) return res.status(404).json({ error: "Set not found" });
 
-    const pricing = await fetchPricing(set.set_number, set.condition, set.slug, set.price_history, set);
+    const pricing = await fetchPricing(set.set_number, set.condition, set.slug, set.price_history, set, {
+      refresh: true,
+    });
     const updated = store.updateSet(set.id, pricing);
     res.json(updated);
   } catch (err) {
@@ -191,7 +195,7 @@ app.post("/api/sets/refresh-all", async (req, res) => {
   res.end();
 });
 
-app.patch("/api/sets/:id", (req, res) => {
+app.patch("/api/sets/:id", async (req, res) => {
   const set = store.getSet(Number(req.params.id));
   if (!set) return res.status(404).json({ error: "Set not found" });
 
@@ -207,6 +211,7 @@ app.patch("/api/sets/:id", (req, res) => {
 
   if (body.missing_pieces !== undefined) {
     body.missing_pieces = store.sanitizeMissingPieces(body.missing_pieces);
+    body.missing_pieces = await enrichMissingPieces(body.missing_pieces);
   }
 
   const updated = store.updateSet(set.id, body);

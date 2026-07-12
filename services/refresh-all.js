@@ -180,8 +180,7 @@ function wrapProgress(onProgress) {
 
 async function refreshAllSets({
   onProgress,
-  delayBetween = 1400,
-  ebayRetryDelay = 2500,
+  delayBetween = 350,
   source = "manual",
 } = {}) {
   if (refreshInProgress || isLockActive()) {
@@ -228,7 +227,14 @@ async function refreshAllSets({
       });
 
       try {
-        const pricing = await fetchPricing(set.set_number, set.condition, set.slug, set.price_history, set);
+        const pricing = await fetchPricing(
+          set.set_number,
+          set.condition,
+          set.slug,
+          set.price_history,
+          set,
+          { refresh: true }
+        );
         store.updateSet(set.id, pricing);
         results.refreshed++;
         progress({
@@ -254,9 +260,6 @@ async function refreshAllSets({
       }
     }
 
-    const ebayResults = await retryMissingEbay(sets, { onProgress: progress, ebayRetryDelay });
-    results.ebay_retried = ebayResults.ebay_retried;
-    results.failed.push(...ebayResults.failed);
     results.finished_at = new Date().toISOString();
     results.ok = results.failed.length === 0;
 

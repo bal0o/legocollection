@@ -25,14 +25,17 @@ function hasPriceData(html) {
   );
 }
 
-async function fetchText(url, { retries = 4 } = {}) {
+async function fetchText(url, { retries = 4, fastFailStatuses = [] } = {}) {
   let lastError;
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
       const res = await fetch(url, {
         headers: { "User-Agent": USER_AGENT, Accept: "text/html" },
-        signal: AbortSignal.timeout(25000),
+        signal: AbortSignal.timeout(fastFailStatuses.length ? 10000 : 25000),
       });
+      if (fastFailStatuses.includes(res.status)) {
+        throw new Error(`HTTP ${res.status} for ${url}`);
+      }
       if (res.status === 429) {
         await sleep(1500 * (attempt + 1));
         continue;
@@ -167,7 +170,7 @@ async function fetchEbayActiveAsks(setNumber) {
   const url = `https://www.ebay.co.uk/sch/i.html?_nkw=${query}&LH_BIN=1&_sop=15&rt=nc&_dcat=19006`;
 
   try {
-    const html = await fetchText(url);
+    const html = await fetchText(url, { retries: 1, fastFailStatuses: [403, 503] });
     const prices = parseActiveListingPrices(html);
     if (prices.length === 0) {
       result.ebay_ask_error = "No active eBay listings found";

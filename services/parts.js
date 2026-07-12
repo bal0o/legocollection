@@ -154,25 +154,38 @@ async function lookupPart(pieceNumber) {
   }
 }
 
+function pieceNeedsLookup(piece) {
+  return !piece?.name && !piece?.lookup_error;
+}
+
+function mergeLookupDetails(piece, details) {
+  return {
+    piece_number: piece.piece_number,
+    bag: piece.bag || "",
+    quantity: Math.max(1, parseInt(piece.quantity, 10) || 1),
+    bl_part_no: details.bl_part_no || piece.bl_part_no || null,
+    element_id: details.element_id ?? piece.element_id ?? null,
+    color_id: details.color_id ?? piece.color_id ?? null,
+    color_name: details.color_name || piece.color_name || null,
+    name: details.name || piece.name || null,
+    image_url: details.image_url || piece.image_url || null,
+    part_url: details.part_url || piece.part_url || null,
+    lookup_error: details.error || piece.lookup_error || null,
+  };
+}
+
 async function enrichMissingPieces(pieces) {
   if (!Array.isArray(pieces) || pieces.length === 0) return [];
 
   const enriched = [];
   for (const piece of pieces) {
+    if (!pieceNeedsLookup(piece)) {
+      enriched.push(mergeLookupDetails(piece, {}));
+      continue;
+    }
+
     const details = await lookupPart(piece.piece_number);
-    enriched.push({
-      piece_number: piece.piece_number,
-      bag: piece.bag || "",
-      quantity: Math.max(1, parseInt(piece.quantity, 10) || 1),
-      bl_part_no: details.bl_part_no || null,
-      element_id: details.element_id || null,
-      color_id: details.color_id ?? null,
-      color_name: details.color_name || null,
-      name: details.name,
-      image_url: details.image_url,
-      part_url: details.part_url,
-      lookup_error: details.error,
-    });
+    enriched.push(mergeLookupDetails(piece, details));
     await sleep(120);
   }
   return enriched;
@@ -181,5 +194,6 @@ async function enrichMissingPieces(pieces) {
 module.exports = {
   lookupPart,
   enrichMissingPieces,
+  pieceNeedsLookup,
   parsePartInput,
 };

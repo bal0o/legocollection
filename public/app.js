@@ -544,11 +544,17 @@ function missingPiecesCount(pieces = []) {
 }
 
 function storedMissingPieces(pieces = []) {
-  return (pieces || []).map((p) => ({
-    piece_number: p.piece_number,
-    bag: p.bag || "",
-    quantity: Math.max(1, parseInt(p.quantity, 10) || 1),
-  }));
+  return (pieces || []).map((p) => {
+    const piece = {
+      piece_number: p.piece_number,
+      bag: p.bag || "",
+      quantity: Math.max(1, parseInt(p.quantity, 10) || 1),
+    };
+    for (const field of ["name", "image_url", "part_url", "bl_part_no", "element_id", "color_id", "color_name", "lookup_error"]) {
+      if (p[field] != null && p[field] !== "") piece[field] = p[field];
+    }
+    return piece;
+  });
 }
 
 function updateMissingSectionVisibility(condition, pieces = []) {
@@ -594,15 +600,16 @@ function renderMissingPiecesList(pieces) {
 }
 
 async function saveMissingPieces(pieces) {
-  if (!detailTargetId) return;
+  if (!detailTargetId) return null;
   const payload = storedMissingPieces(pieces);
-  await api(`/api/sets/${detailTargetId}`, {
+  const updated = await api(`/api/sets/${detailTargetId}`, {
     method: "PATCH",
     body: JSON.stringify({ missing_pieces: payload }),
   });
   if (detailCurrentSet) {
-    detailCurrentSet.missing_pieces = payload;
+    detailCurrentSet.missing_pieces = updated.missing_pieces || payload;
   }
+  return updated;
 }
 
 async function removeMissingPiece(index) {
@@ -620,11 +627,13 @@ async function removeMissingPiece(index) {
 }
 
 let missingPreviewTimer = null;
+let missingPreviewPart = null;
 
 async function previewMissingPiece() {
   const partNum = $("#missing-piece-number").value.trim();
   const preview = $("#missing-piece-preview");
   if (!partNum) {
+    missingPreviewPart = null;
     preview.classList.add("hidden");
     preview.innerHTML = "";
     return;
@@ -635,6 +644,7 @@ async function previewMissingPiece() {
 
   try {
     const part = await api(`/api/parts/${encodeURIComponent(partNum)}`);
+    missingPreviewPart = part.error && !part.name ? null : part;
     if (part.error && !part.name) {
       preview.innerHTML = `<span class="missing-preview-error">${esc(part.error)}</span>`;
       return;
@@ -674,6 +684,7 @@ function populateDetailManageForm(set) {
   $("#missing-piece-quantity").value = "1";
   $("#missing-piece-preview").classList.add("hidden");
   $("#missing-piece-preview").innerHTML = "";
+  missingPreviewPart = null;
 }
 
 async function openSetDetailAsync(id) {
@@ -749,17 +760,30 @@ $("#missing-btn-add").addEventListener("click", async () => {
 
   const pieces = storedMissingPieces(detailCurrentSet?.missing_pieces || []);
   const existing = pieces.find((p) => p.piece_number === piece_number && p.bag === bag);
+  const lookupFields = missingPreviewPart?.piece_number === piece_number
+    ? {
+        name: missingPreviewPart.name,
+        image_url: missingPreviewPart.image_url,
+        part_url: missingPreviewPart.part_url,
+        bl_part_no: missingPreviewPart.bl_part_no,
+        element_id: missingPreviewPart.element_id,
+        color_id: missingPreviewPart.color_id,
+        color_name: missingPreviewPart.color_name,
+        lookup_error: missingPreviewPart.error,
+      }
+    : {};
+
   if (existing) {
     existing.quantity += quantity;
   } else {
-    pieces.push({ piece_number, bag, quantity });
+    pieces.push({ piece_number, bag, quantity, ...lookupFields });
   }
 
   const btn = $("#missing-btn-add");
   btn.disabled = true;
   btn.textContent = "Adding…";
   try {
-    await saveMissingPieces(pieces);
+    const updated = await saveMissingPieces(pieces);
     if (!isMissingCondition($("#detail-condition").value)) {
       await api(`/api/sets/${detailTargetId}`, {
         method: "PATCH",

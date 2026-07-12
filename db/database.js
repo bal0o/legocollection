@@ -33,15 +33,32 @@ function normalizeMissingPieces(set) {
   return set;
 }
 
+const MISSING_PIECE_LOOKUP_FIELDS = [
+  "name",
+  "image_url",
+  "part_url",
+  "bl_part_no",
+  "element_id",
+  "color_id",
+  "color_name",
+  "lookup_error",
+];
+
 function sanitizeMissingPieces(input) {
   if (!Array.isArray(input)) return [];
   const seen = new Set();
   return input
-    .map((p) => ({
-      piece_number: String(p.piece_number || "").trim(),
-      bag: String(p.bag || "").trim(),
-      quantity: Math.max(1, parseInt(p.quantity, 10) || 1),
-    }))
+    .map((p) => {
+      const piece = {
+        piece_number: String(p.piece_number || "").trim(),
+        bag: String(p.bag || "").trim(),
+        quantity: Math.max(1, parseInt(p.quantity, 10) || 1),
+      };
+      for (const field of MISSING_PIECE_LOOKUP_FIELDS) {
+        if (p[field] != null && p[field] !== "") piece[field] = p[field];
+      }
+      return piece;
+    })
     .filter((p) => {
       if (!p.piece_number) return false;
       const key = `${p.piece_number}|${p.bag}`;
