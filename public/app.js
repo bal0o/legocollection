@@ -154,7 +154,8 @@ function esc(str) {
 function actionButtons(id) {
   return `
     <button type="button" class="btn btn-sm btn-ghost btn-action" data-history="${id}" title="Price history" aria-label="Price history">📈</button>
-    <button type="button" class="btn btn-sm btn-ghost btn-action" data-refresh="${id}" title="Refresh prices" aria-label="Refresh prices">↻</button>`;
+    <button type="button" class="btn btn-sm btn-ghost btn-action" data-refresh="${id}" title="Refresh prices" aria-label="Refresh prices">↻</button>
+    <button type="button" class="btn btn-sm btn-ghost btn-action btn-action-remove" data-remove="${id}" title="Remove from collection" aria-label="Remove from collection">×</button>`;
 }
 
 function bindSetInteractions(root) {
@@ -171,6 +172,16 @@ function bindSetInteractions(root) {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       openHistoryModal(btn.dataset.history);
+    });
+  });
+  root.querySelectorAll("[data-remove]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const row = btn.closest("tr, .set-card");
+      const label = row
+        ? `${row.querySelector("strong").textContent} ${row.querySelector(".name").textContent.trim()}`
+        : "";
+      removeSetFromCollection(btn.dataset.remove, label);
     });
   });
   root.querySelectorAll("[data-edit-listed]").forEach((cell) => {
@@ -327,6 +338,22 @@ async function onStatusChange(sel) {
 
 async function refresh() {
   await Promise.all([loadStats(), loadSets()]);
+}
+
+async function removeSetFromCollection(id, label, { closeDetail = false } = {}) {
+  const name = (label || "").trim() || `set ${id}`;
+  if (!confirm(`Remove ${name} from your collection? This cannot be undone.`)) return;
+
+  try {
+    await api(`/api/sets/${id}`, { method: "DELETE" });
+    if (closeDetail) $("#modal-detail").close();
+    detailTargetId = null;
+    detailCurrentSet = null;
+    toast("Removed from collection");
+    await refresh();
+  } catch (err) {
+    toast(err.message, "error");
+  }
 }
 
 function openHistoryModal(id) {
@@ -969,6 +996,12 @@ $("#btn-copy-listing").addEventListener("click", async () => {
 $("#detail-btn-history").addEventListener("click", () => {
   $("#modal-detail").close();
   if (detailTargetId) openHistoryModal(detailTargetId);
+});
+
+$("#detail-btn-remove").addEventListener("click", () => {
+  if (!detailTargetId || !detailCurrentSet) return;
+  const label = `${detailCurrentSet.set_number} — ${detailCurrentSet.description}`;
+  removeSetFromCollection(detailTargetId, label, { closeDetail: true });
 });
 
 $("#detail-btn-refresh").addEventListener("click", async () => {

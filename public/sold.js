@@ -10,11 +10,24 @@ let sortColumn = "sold_date";
 let sortDir = "desc";
 let searchDebounce = null;
 
-async function api(path) {
-  const res = await fetch(path, { headers: { Accept: "application/json" } });
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    headers: { "Content-Type": "application/json", Accept: "application/json", ...(opts.headers || {}) },
+    ...opts,
+  });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
   return data;
+}
+
+function toast(message, type = "success") {
+  const el = $("#toast");
+  el.textContent = message;
+  el.className = `toast ${type}`;
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => {
+    el.className = "toast hidden";
+  }, 3200);
 }
 
 function esc(str) {
@@ -130,6 +143,9 @@ function renderItems(items) {
       <td class="num sold-price">${fmt(item.sold_price)}</td>
       <td class="num hide-mobile">${fmtWhole(item.recommended_price)}</td>
       <td class="num">${fmtPct(item.vs_recommended_pct)}</td>
+      <td class="col-actions">
+        <button type="button" class="btn btn-sm btn-ghost btn-action btn-action-remove" data-remove="${item.id}" title="Remove from collection" aria-label="Remove from collection">×</button>
+      </td>
     </tr>`
     )
     .join("");
@@ -142,8 +158,24 @@ function renderItems(items) {
       <td class="num"><strong>${fmt(cachedSummary.total_sold)}</strong></td>
       <td class="num hide-mobile"><strong>${fmtWhole(cachedSummary.total_recommended)}</strong></td>
       <td class="num"><strong>${fmtPctPlain(cachedSummary.avg_vs_recommended_pct)}</strong></td>
+      <td></td>
     </tr>`;
   }
+
+  tbody.querySelectorAll("[data-remove]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const item = sorted.find((entry) => String(entry.id) === btn.dataset.remove);
+      const label = item ? `${item.set_number} — ${item.description}` : `set ${btn.dataset.remove}`;
+      if (!confirm(`Remove ${label} from sold history? This cannot be undone.`)) return;
+      try {
+        await api(`/api/sets/${btn.dataset.remove}`, { method: "DELETE" });
+        toast("Removed from collection");
+        await loadSoldHistory();
+      } catch (err) {
+        toast(err.message, "error");
+      }
+    });
+  });
 }
 
 async function loadSoldHistory() {
@@ -158,16 +190,9 @@ async function loadSoldHistory() {
 $("#filter-search").addEventListener("input", () => {
   clearTimeout(searchDebounce);
   searchDebounce = setTimeout(() => {
-    loadSoldHistory().catch((err) => {
-      const el = $("#toast");
-      el.textContent = err.message;
-      el.className = "toast error";
-    });
+    loadSoldHistory().catch((err) => toast(err.message, "error"));
   }, 250);
 });
 
 bindSortHeaders();
-loadSoldHistory().catch((err) => {
-  $("#toast").textContent = err.message;
-  $("#toast").className = "toast error";
-});
+loadSoldHistory().catch((err) => toast(err.message, "error"));

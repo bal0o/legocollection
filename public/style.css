@@ -87,6 +87,15 @@ body {
 .btn-secondary:hover:not(:disabled) { background: var(--border); }
 .btn-ghost { background: transparent; color: var(--muted); }
 .btn-ghost:hover { color: var(--text); }
+.btn-danger {
+  background: transparent;
+  color: var(--red);
+  border: 1px solid color-mix(in srgb, var(--red) 55%, var(--border));
+}
+.btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+  border-color: var(--red);
+}
 .btn-sm { padding: 0.3rem 0.6rem; font-size: 0.75rem; }
 .btn-icon { padding: 0.3rem 0.5rem; }
 
@@ -242,6 +251,14 @@ body {
   padding: 0.35rem;
   min-width: 2rem;
   min-height: 2rem;
+}
+
+.btn-action-remove {
+  font-size: 1.15rem;
+}
+
+.btn-action-remove:hover {
+  color: var(--red);
 }
 
 .sets-cards {
@@ -506,6 +523,18 @@ body {
   justify-content: flex-end;
   gap: 0.5rem;
   margin-top: 1rem;
+}
+
+.modal-actions-split {
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.modal-actions-group {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: auto;
 }
 
 .toast {
