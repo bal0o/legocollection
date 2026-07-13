@@ -42,6 +42,36 @@ function soldSignal(data, condition) {
   return bl || ebay || null;
 }
 
+function realisticUsedPrice(data, condition) {
+  const cond = (condition || data.condition || "").toLowerCase();
+  const sold = soldSignal(data, condition);
+  const ebay = data.ebay_sold_avg ?? data.ebay_sold_median;
+
+  if (cond.includes("missing")) {
+    return sold ? round(sold * 0.88) : null;
+  }
+
+  let price = sold || ebay;
+  if (ebay && price) {
+    price = Math.min(price, round(ebay * 1.05));
+  }
+  return price;
+}
+
+function realisticBnibPrice(data) {
+  const sold = soldSignal(data, "BNIB");
+  const asks = askSignal(data, "BNIB");
+  if (!sold && !asks) return null;
+
+  if (sold && asks) {
+    const spread = asks / sold;
+    const askWeight = spread > 1.12 ? 0.38 : 0.28;
+    return round(sold * (1 - askWeight) + asks * askWeight);
+  }
+
+  return sold || asks;
+}
+
 function askSignal(data, condition) {
   const stock = pickStockGuide(data, condition);
   return median([stock.avg, stock.min, data.ebay_ask_median, data.ebay_ask_min].filter(Boolean));
@@ -59,19 +89,14 @@ function competitiveAskFloor(data, condition) {
   return floors.length ? Math.max(...floors) : null;
 }
 
-function applyCompetitiveFloor(price, floor) {
-  if (price == null || Number.isNaN(price)) return floor ?? null;
-  if (!floor) return price;
-  return Math.max(price, floor);
-}
 
 function suggestListingPrices(data, condition) {
   const cond = (condition || data.condition || "").toLowerCase();
   const sold = soldSignal(data, condition);
   const asks = askSignal(data, condition);
-  const floor = competitiveAskFloor(data, condition);
+  const listingFloor = competitiveAskFloor(data, condition);
 
-  if (!sold && !asks && !floor) {
+  if (!sold && !asks && !listingFloor) {
     return {
       recommended_price: null,
       private_sale_value: null,
@@ -81,22 +106,17 @@ function suggestListingPrices(data, condition) {
   }
 
   let price;
+  let competitiveFloor = null;
 
-  if (sold && asks) {
-    const spread = asks / sold;
-    const askWeight = spread > 1.12 ? 0.62 : 0.52;
-    price = round(sold * (1 - askWeight) + asks * askWeight);
+  if (cond.includes("bnib")) {
+    price = realisticBnibPrice(data);
+    competitiveFloor = listingFloor;
+    if (listingFloor && price && listingFloor > price && listingFloor <= price * 1.05) {
+      price = listingFloor;
+    }
   } else {
-    price = asks || sold;
+    price = realisticUsedPrice(data, condition) || sold || asks;
   }
-
-  if (cond.includes("missing")) {
-    price = round((price || sold || asks) * 0.88);
-  } else if (cond.includes("bagged") && data.bl_sealed_avg > 0 && price) {
-    price = Math.min(price, round(data.bl_sealed_avg * 0.9));
-  }
-
-  price = applyCompetitiveFloor(price, floor);
 
   const recommended = price != null && price > 0 ? roundListing(price) : null;
 
@@ -104,7 +124,7 @@ function suggestListingPrices(data, condition) {
     recommended_price: recommended,
     private_sale_value: recommended,
     ebay_listing_price: recommended,
-    competitive_floor: floor,
+    competitive_floor: competitiveFloor,
   };
 }
 
@@ -145,4 +165,7 @@ module.exports = {
   appendPriceHistory,
   competitiveAskFloor,
   resolveRecommendedPrice,
+  soldSignal,
+  realisticUsedPrice,
+  realisticBnibPrice,
 };
